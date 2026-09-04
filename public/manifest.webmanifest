@@ -1,0 +1,12 @@
+{
+  "name": "ITDB — International Tokenized Development Bank",
+  "short_name": "ITDB",
+  "description": "A consumer bank on Stellar.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#06162f",
+  "theme_color": "#06162f",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
