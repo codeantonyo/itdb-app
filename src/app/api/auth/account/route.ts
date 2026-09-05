@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { MAX_WALLETS } from "@/lib/itdb/config";
 import { mutateDb, toPublic } from "@/lib/server/db";
 import { sessionAccountId } from "@/lib/server/session";
 
@@ -49,7 +50,12 @@ export async function PATCH(req: Request) {
       }
     }
     if (Array.isArray(body.wallets)) {
-      const valid = body.wallets.filter((w) => ADDRESS_RE.test(w));
+      // De-duplicate, keep only valid addresses, and enforce the cap
+      // server-side so the client can't raise it.
+      const valid = [...new Set(body.wallets.filter((w) => ADDRESS_RE.test(w)))];
+      if (valid.length > MAX_WALLETS) {
+        return { error: `You can link up to ${MAX_WALLETS} wallets.` };
+      }
       // Primary wallet (index 0) can never be removed
       if (valid.length > 0 && valid[0] === account.wallets[0]) {
         account.wallets = valid;

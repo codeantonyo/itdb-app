@@ -32,8 +32,8 @@ export interface StoredCard {
   createdAt: number;
 }
 
-/** Hard product limit — one card per account. */
-export const MAX_CARDS = 1;
+/** Hard product limit — up to three cards per account. */
+export const MAX_CARDS = 3;
 
 /** Freeze locks the card for at least this long. */
 export const FREEZE_MIN_MS = 3 * 24 * 60 * 60 * 1000;
@@ -104,6 +104,9 @@ export function generateCvv(): string {
 export function formatPan(pan: string): string {
   return pan.replace(/(.{4})/g, "$1 ").trim();
 }
+
+/** Short display label for a card: "Gold Leaf ·· 2343". */
+export const cardLabel = (card: StoredCard) => `${card.name} ·· ${card.number.slice(-4)}`;
 
 /** Activation window: random 1–3 minutes per card. */
 function randomActivationDelay(): number {
@@ -181,7 +184,7 @@ function readCards(address: string | null): StoredCard[] {
   } catch {
     value = EMPTY;
   }
-  // One card per account — a stored list from any older shape is capped.
+  // Cap a stored list from any older shape.
   value = value.slice(0, MAX_CARDS);
   cache.set(address, { raw, value });
   return value;
@@ -246,7 +249,7 @@ export function useCards(address: string | null) {
         readyNotified: false,
         createdAt: now,
       };
-      writeCards(address, [card]);
+      writeCards(address, [...readCards(address), card]);
       return card;
     },
     [address],
@@ -288,5 +291,15 @@ export function useCards(address: string | null) {
     [address],
   );
 
-  return { cards, card: cards[0] ?? null, ready, openCard, freezeCard, unfreezeCard, removeCard };
+  return {
+    cards,
+    /** Convenience for single-card surfaces; prefer `cards`. */
+    card: cards[0] ?? null,
+    ready,
+    canOpenMore: cards.length < MAX_CARDS,
+    openCard,
+    freezeCard,
+    unfreezeCard,
+    removeCard,
+  };
 }

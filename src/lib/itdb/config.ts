@@ -17,6 +17,13 @@ export { ITDB_TOKEN, ITDBONE_TOKEN, QRS_TOKEN, marketUrl } from "@/lib/stellar/r
 export const DAY_MS = 86_400_000;
 
 /**
+ * Wallets a member may link: the primary they registered with, plus two
+ * more. Holdings across all of them count toward every tier, so the cap
+ * bounds how much Horizon work one account can trigger per read.
+ */
+export const MAX_WALLETS = 3;
+
+/**
  * Yield accrues continuously, so without a floor a member could collect
  * a fraction of a dollar every second — spamming the ledger and their
  * own Telegram. A minimum plus a cooldown keeps collecting meaningful

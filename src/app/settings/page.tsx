@@ -7,8 +7,9 @@ import { PageHeader } from "@/components/layout/page-header";
 import { SectionHeader } from "@/components/shared/section-header";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
-import { shortAddress, STELLAR_ADDRESS_RE, useAuth } from "@/lib/client/auth";
+import { shortAddress, useAuth } from "@/lib/client/auth";
 import { useTheme } from "@/lib/client/theme";
+import { MAX_WALLETS } from "@/lib/itdb/config";
 import { cn } from "@/lib/utils";
 
 export default function SettingsPage() {
@@ -30,12 +31,11 @@ export default function SettingsPage() {
   };
 
   const submitWallet = () => {
-    const addr = newWallet.trim().toUpperCase();
-    if (!STELLAR_ADDRESS_RE.test(addr)) {
-      setWalletError("A Stellar address starts with G and has 56 characters.");
+    const problem = addWallet(newWallet.trim().toUpperCase());
+    if (problem) {
+      setWalletError(problem);
       return;
     }
-    addWallet(addr);
     setNewWallet("");
     setWalletError(null);
   };
@@ -90,7 +90,7 @@ export default function SettingsPage() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <SectionHeader title="Wallets" note="read-only" />
+        <SectionHeader title="Wallets" note={`${session.wallets.length} of ${MAX_WALLETS}`} />
         <div className="card divide-y divide-hairline">
           {session.wallets.map((w, i) => (
             <div key={w} className="flex items-center justify-between gap-3 px-4 py-3.5">
@@ -106,25 +106,35 @@ export default function SettingsPage() {
             </div>
           ))}
           <div className="p-3">
-            <div className="flex items-end gap-2">
-              <Field
-                className="flex-1"
-                label="Add a wallet"
-                placeholder="G…"
-                value={newWallet}
-                onChange={(e) => {
-                  setNewWallet(e.target.value);
-                  setWalletError(null);
-                }}
-                spellCheck={false}
-                autoCapitalize="characters"
-              />
-              <Button variant="outline" size="md" onClick={submitWallet} aria-label="Add wallet" className="h-[54px]">
-                <Plus className="size-4" />
-              </Button>
-            </div>
-            {walletError && <p className="mt-2 text-[13.5px] text-danger">{walletError}</p>}
-            <p className="mt-2 text-[13px] text-muted-2">Holdings across all wallets count toward your tiers.</p>
+            {session.wallets.length < MAX_WALLETS ? (
+              <>
+                <div className="flex items-end gap-2">
+                  <Field
+                    className="flex-1"
+                    label="Add a wallet"
+                    placeholder="G…"
+                    value={newWallet}
+                    onChange={(e) => {
+                      setNewWallet(e.target.value);
+                      setWalletError(null);
+                    }}
+                    spellCheck={false}
+                    autoCapitalize="characters"
+                  />
+                  <Button variant="outline" size="md" onClick={submitWallet} aria-label="Add wallet" className="h-[54px]">
+                    <Plus className="size-4" />
+                  </Button>
+                </div>
+                {walletError && <p className="mt-2 text-[13.5px] text-danger">{walletError}</p>}
+              </>
+            ) : (
+              <p className="text-[13.5px] text-muted">
+                All {MAX_WALLETS} wallet slots are in use. Remove one to link a different address.
+              </p>
+            )}
+            <p className="mt-2 text-[13px] text-muted-2">
+              Read-only. Holdings across all wallets count toward your tiers and airdrop eligibility.
+            </p>
           </div>
         </div>
       </section>

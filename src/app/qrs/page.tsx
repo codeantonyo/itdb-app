@@ -30,7 +30,7 @@ export default function QrsPage() {
   const asset = portfolio.assets.find((a) => a.code === "QRS");
   const summary = useJson<QrsSummary>("/api/qrs", 60_000);
   const ledger = useWalletLedger(!!session);
-  const { card } = useCards(session?.address ?? null);
+  const { cards } = useCards(session?.address ?? null);
   const [collectOpen, setCollectOpen] = useState(false);
   const s = summary.data;
 
@@ -63,7 +63,7 @@ export default function QrsPage() {
       {summary.error && !s && <NetworkNotice message={summary.error} onRetry={summary.refresh} />}
 
       {s ? (
-        <YieldCard y={s.yield} tokenCode="QRS" minLabel={`${formatAmount(s.tiers[0].min, 0)} QRS`} onCollect={() => setCollectOpen(true)} />
+        <YieldCard y={s.yield} minLabel={`${formatAmount(s.tiers[0].min, 0)} QRS`} onCollect={() => setCollectOpen(true)} />
       ) : summary.loading ? (
         <Skeleton className="h-[300px] rounded-[20px]" />
       ) : null}
@@ -114,8 +114,8 @@ export default function QrsPage() {
           onClose={() => setCollectOpen(false)}
           program="qrs"
           pendingUsd={s.yield.pendingUsd}
-          card={card}
-          ledgerCard={card ? ledger.cards[card.id] : undefined}
+          cards={cards}
+          ledgerCards={ledger.cards}
           onConfirm={collect}
         />
       )}

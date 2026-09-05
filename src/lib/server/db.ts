@@ -99,6 +99,45 @@ export interface YieldRecord {
   claims: YieldClaim[];
 }
 
+/** One asset line of a claimed airdrop. Quantities are fixed at claim. */
+export interface AirdropGrantLine {
+  code: string;
+  /** Quantity originally granted */
+  granted: number;
+  /** Quantity still held after withdrawals */
+  remaining: number;
+}
+
+/** One withdrawal of airdropped value onto a card. */
+export interface AirdropWithdrawal {
+  id: string;
+  at: number;
+  code: string;
+  /** Units of the asset removed from the grant */
+  units: number;
+  /** USD value at the moment of withdrawal */
+  usd: number;
+  /** cardId the value landed on */
+  destination: string;
+  /** Amount actually credited, in the card's own currency */
+  credited: number;
+  currency: string;
+}
+
+/**
+ * A member's claim on one airdrop. Created only by the claim path;
+ * quantities never change except through a recorded withdrawal.
+ */
+export interface AirdropRecord {
+  /** Airdrop id from src/lib/itdb/airdrop.ts */
+  airdropId: string;
+  claimedAt: number;
+  lines: AirdropGrantLine[];
+  withdrawals: AirdropWithdrawal[];
+  /** Total USD withdrawn, at the rates current when each was made */
+  withdrawnUsd: number;
+}
+
 export type OtpPurpose = "signup" | "reset" | "change_email";
 
 export interface OtpRecord {
@@ -152,6 +191,8 @@ export interface DbShape {
   itdbone: Record<string, YieldRecord>;
   /** QRS yield records, keyed by accountId */
   qrs: Record<string, YieldRecord>;
+  /** Claimed airdrops, keyed by accountId */
+  airdrops: Record<string, AirdropRecord>;
 }
 
 const DB_DIR = path.join(process.cwd(), "data");
@@ -195,6 +236,7 @@ const emptyDb = (): DbShape => ({
   acquired: {},
   itdbone: {},
   qrs: {},
+  airdrops: {},
 });
 
 const obj = <T>(v: unknown, fallback: T): T =>
@@ -222,6 +264,7 @@ function normalizeDb(db: Partial<DbShape>): DbShape {
     acquired: obj(db.acquired, {}),
     itdbone: obj(db.itdbone, {}),
     qrs: obj(db.qrs, {}),
+    airdrops: obj(db.airdrops, {}),
   };
 }
 
@@ -388,6 +431,8 @@ function splitDb(db: DbShape): Map<string, string> {
     out.set(`itdbone:${id}`, JSON.stringify(y));
   for (const [id, y] of Object.entries(db.qrs))
     out.set(`qrs:${id}`, JSON.stringify(y));
+  for (const [id, a] of Object.entries(db.airdrops))
+    out.set(`airdrop:${id}`, JSON.stringify(a));
   return out;
 }
 
@@ -415,6 +460,8 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
       db.itdbone[shard.slice(8)] = value as YieldRecord;
     else if (shard.startsWith("qrs:"))
       db.qrs[shard.slice(4)] = value as YieldRecord;
+    else if (shard.startsWith("airdrop:"))
+      db.airdrops[shard.slice(8)] = value as AirdropRecord;
   }
   db.accounts.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   return normalizeDb(db);
@@ -426,7 +473,7 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
  * deployment's shards survive a brief old/new instance overlap.
  */
 const OWNED_SHARD_RE =
-  /^(meta|otps|otpThrottle|loginThrottle|acquired)$|^(account|userstate|ledger|itdbone|qrs):/;
+  /^(meta|otps|otpThrottle|loginThrottle|acquired)$|^(account|userstate|ledger|itdbone|qrs|airdrop):/;
 
 function entryFromRow(row: {
   shard: string;

@@ -15,6 +15,7 @@ const VISIBLE_CODES = new Set(["XLM", ...TOKEN_REGISTRY.map((t) => t.code)]);
 export const LEDGER_SOURCE_LABELS: Record<string, string> = {
   itdbone: "ITDBONE yield",
   qrs: "QRS yield",
+  airdrop: "Airdrop withdrawal",
 };
 
 interface LedgerTxnLite {

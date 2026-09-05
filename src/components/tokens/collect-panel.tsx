@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { LedgerLine } from "@/components/shared/ledger-line";
 import { Button } from "@/components/ui/button";
 import { ChoiceRow } from "@/components/ui/field";
 import { Panel } from "@/components/ui/panel";
-import type { StoredCard } from "@/lib/client/cards";
+import { cardLabel, type StoredCard } from "@/lib/client/cards";
 import type { LedgerCard } from "@/lib/client/wallet-ledger";
 import { formatCurrency, formatExactCurrency } from "@/lib/format";
 import { formatMoney } from "@/lib/wallet/currencies";
@@ -23,24 +23,42 @@ interface CollectPanelProps {
   onClose: () => void;
   program: "itdbone" | "qrs";
   pendingUsd: number;
-  card: StoredCard | null;
-  ledgerCard: LedgerCard | undefined;
+  /** Every card on the account; frozen and unregistered ones are disabled. */
+  cards: StoredCard[];
+  ledgerCards: Record<string, LedgerCard>;
   onConfirm: (destination: string) => Promise<CollectOutcome>;
 }
 
 /**
- * The collection slip: choose where the yield lands, confirm, and read
- * the receipt — which states the EXACT amount credited.
+ * The collection slip: choose where the yield lands — the ITDB account
+ * or any of the member's cards — confirm, and read the receipt, which
+ * states the EXACT amount credited.
  */
-export function CollectPanel({ open, onClose, program, pendingUsd, card, ledgerCard, onConfirm }: CollectPanelProps) {
-  const [destination, setDestination] = useState<string>("account");
+export function CollectPanel({
+  open,
+  onClose,
+  program,
+  pendingUsd,
+  cards,
+  ledgerCards,
+  onConfirm,
+}: CollectPanelProps) {
+  const [picked, setPicked] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<CollectOutcome | null>(null);
 
-  const cardUsable = !!card && !card.frozen && !!ledgerCard;
+  const usable = useMemo(
+    () => cards.filter((c) => !c.frozen && ledgerCards[c.id]),
+    [cards, ledgerCards],
+  );
+  // Derived, so it stays valid if a card is frozen or closed underneath.
+  const destination = picked === "account" || usable.some((c) => c.id === picked) ? picked! : "account";
   const label = program === "itdbone" ? "ITDBONE" : "QRS";
-  const cardLabel = card ? `${card.name} ·· ${card.number.slice(-4)}` : "Your card";
+  const destName =
+    destination === "account"
+      ? "your ITDB account"
+      : (cards.find((c) => c.id === destination) ? cardLabel(cards.find((c) => c.id === destination)!) : "your card");
 
   const close = () => {
     onClose();
@@ -48,7 +66,7 @@ export function CollectPanel({ open, onClose, program, pendingUsd, card, ledgerC
       setBusy(false);
       setError(null);
       setReceipt(null);
-      setDestination("account");
+      setPicked(null);
     }, 300);
   };
 
@@ -78,7 +96,7 @@ export function CollectPanel({ open, onClose, program, pendingUsd, card, ledgerC
             {receipt.currency && receipt.currency !== "USD" && (
               <LedgerLine label="At today's rate" value={formatExactCurrency(receipt.usd ?? 0)} />
             )}
-            <LedgerLine label="To" value={destination === "account" ? "ITDB account" : cardLabel} valueClassName="font-medium" />
+            <LedgerLine label="To" value={destName} valueClassName="font-medium" />
             <LedgerLine label="Yield resumes" value="Now" valueClassName="font-medium" />
           </div>
           <Button size="lg" className="mt-4" onClick={close}>
@@ -93,25 +111,34 @@ export function CollectPanel({ open, onClose, program, pendingUsd, card, ledgerC
           <div className="mt-3 flex flex-col gap-2" role="radiogroup">
             <ChoiceRow
               selected={destination === "account"}
-              onSelect={() => setDestination("account")}
+              onSelect={() => setPicked("account")}
               label="ITDB account"
               note="Raises your available balance"
             />
-            <ChoiceRow
-              selected={destination !== "account"}
-              onSelect={() => cardUsable && card && setDestination(card.id)}
-              disabled={!cardUsable}
-              label={cardLabel}
-              note={
-                !card
-                  ? "Open a card first"
-                  : card.frozen
-                    ? "Card is frozen"
-                    : ledgerCard
-                      ? `Converted to ${ledgerCard.currency} at live FX`
-                      : "Card still registering"
-              }
-            />
+            {cards.length === 0 ? (
+              <ChoiceRow selected={false} onSelect={() => {}} disabled label="Your card" note="Open a card first" />
+            ) : (
+              cards.map((c) => {
+                const ledgerCard = ledgerCards[c.id];
+                const disabled = c.frozen || !ledgerCard;
+                return (
+                  <ChoiceRow
+                    key={c.id}
+                    selected={destination === c.id}
+                    onSelect={() => !disabled && setPicked(c.id)}
+                    disabled={disabled}
+                    label={cardLabel(c)}
+                    note={
+                      c.frozen
+                        ? "Card is frozen"
+                        : ledgerCard
+                          ? `Converted to ${ledgerCard.currency} at live FX`
+                          : "Card still registering"
+                    }
+                  />
+                );
+              })
+            )}
           </div>
           {error && <p className="mt-3 rounded-xl bg-danger-soft px-3.5 py-2.5 text-[14px] text-danger">{error}</p>}
           <Button size="lg" className="mt-4" disabled={busy} onClick={confirm}>

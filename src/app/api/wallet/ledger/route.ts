@@ -6,6 +6,9 @@ import { fromAccountXlm } from "@/lib/server/ledger";
 import { sessionAccountId } from "@/lib/server/session";
 import { CURRENCIES, DEFAULT_CURRENCY, isCurrency } from "@/lib/wallet/currencies";
 
+/** Mirrors MAX_CARDS in src/lib/client/cards.ts (that module is client-only). */
+const MAX_CARDS = 3;
+
 const EMPTY: AccountLedger = { cards: {}, txns: [] };
 
 /**
@@ -39,9 +42,9 @@ interface PutBody {
 }
 
 /**
- * PUT — register the card's currency (on open) or change it later (the
- * balance is converted). ITDB issues ONE card per account: a second
- * card id is refused while another is registered.
+ * PUT — register a card's currency (on open) or change it later (the
+ * balance is converted). The per-account card cap is enforced here as
+ * well as in the client store, so it holds across devices.
  */
 export async function PUT(req: Request) {
   const id = await sessionAccountId(req);
@@ -68,9 +71,8 @@ export async function PUT(req: Request) {
       existing.currency = currency;
       return { card: existing };
     }
-    const others = Object.keys(ledger.cards);
-    if (others.length > 0) {
-      return { error: "ITDB issues one card per account. Close your current card first." };
+    if (Object.keys(ledger.cards).length >= MAX_CARDS) {
+      return { error: `ITDB issues up to ${MAX_CARDS} cards per account. Close one first.` };
     }
     ledger.cards[cardId] = { currency, balance: 0 };
     return { card: ledger.cards[cardId] };

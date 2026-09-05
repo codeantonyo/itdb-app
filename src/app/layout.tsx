@@ -20,7 +20,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "ITDB — International Tokenized Development Bank",
   description:
-    "A consumer bank on Stellar. ITDB, ITDBONE and QRS — live prices, tiered reserve positions, and one card per account.",
+    "A consumer bank on Stellar. ITDB, ITDBONE and QRS — live prices, tiered reserve positions, daily yield and up to three cards.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,

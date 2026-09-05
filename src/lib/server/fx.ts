@@ -39,6 +39,10 @@ const CRYPTO_IDS: Record<string, string> = {
   DOT: "polkadot",
   MATIC: "matic-network",
   LINK: "chainlink",
+  // Airdrop assets (src/lib/itdb/airdrop.ts)
+  ALGO: "algorand",
+  TON: "the-open-network",
+  MIOTA: "iota",
 };
 
 /** USD per unit, used only when the live feed is unreachable. */
@@ -53,6 +57,9 @@ const FALLBACK_CRYPTO_USD: Record<string, number> = {
   DOT: 0.89,
   MATIC: 0.126,
   LINK: 11.8,
+  ALGO: 0.094,
+  TON: 1.43,
+  MIOTA: 0.04,
 };
 
 export type Metal =
@@ -195,6 +202,8 @@ export interface FxRates {
   usdOf: (code: string) => number;
   /** USD per kilogram of a metal. */
   metalUsdPerKg: (metal: Metal) => number;
+  /** USD per troy ounce — the conventional quote unit for bullion. */
+  metalUsdPerOz: (metal: Metal) => number;
   /** Whether a figure came from a live feed or the reference table. */
   sourceOf: (code: string) => PriceSource;
   metalSourceOf: (metal: Metal) => PriceSource;
@@ -213,6 +222,7 @@ export async function getFx(): Promise<FxRates> {
     },
     usdOf: (code) => usdPerUnit(rates, code),
     metalUsdPerKg: (metal) => rates.metalUsdPerKg[metal],
+    metalUsdPerOz: (metal) => rates.metalUsdPerKg[metal] / TROY_OZ_PER_KG,
     sourceOf: (code) => rates.sources[code] ?? "reference",
     metalSourceOf: (metal) => rates.sources[`metal:${metal}`] ?? "reference",
     xlmUsd: rates.cryptoUsd.XLM,

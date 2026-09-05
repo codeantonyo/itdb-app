@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownLeft, ArrowUpRight, Coins, CreditCard, Medal, Sparkles, type LucideIcon } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Coins, CreditCard, Gift, Medal, Sparkles, type LucideIcon } from "lucide-react";
 import { shortAddress } from "@/lib/client/auth";
 import { formatTokenAmount } from "@/lib/format";
 import type { AccountPayment } from "@/lib/stellar/types";
@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 const LEDGER_ICONS: Record<string, LucideIcon> = {
   ledger_itdbone: Coins,
   ledger_qrs: Medal,
+  ledger_airdrop: Gift,
   ledger_transfer: CreditCard,
 };
 

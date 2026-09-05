@@ -29,7 +29,7 @@ export default function ItdbonePage() {
   const asset = portfolio.assets.find((a) => a.code === "ITDBONE");
   const summary = useJson<ItdboneSummary>("/api/itdbone", 60_000);
   const ledger = useWalletLedger(!!session);
-  const { card } = useCards(session?.address ?? null);
+  const { cards } = useCards(session?.address ?? null);
   const [collectOpen, setCollectOpen] = useState(false);
   const s = summary.data;
 
@@ -74,7 +74,7 @@ export default function ItdbonePage() {
       {summary.error && !s && <NetworkNotice message={summary.error} onRetry={summary.refresh} />}
 
       {s ? (
-        <YieldCard y={s.yield} tokenCode="ITDBONE" minLabel={`${formatAmount(s.tiers[0].rangeMin, 0)} ITDBONE`} onCollect={() => setCollectOpen(true)} />
+        <YieldCard y={s.yield} minLabel={`${formatAmount(s.tiers[0].rangeMin, 0)} ITDBONE`} onCollect={() => setCollectOpen(true)} />
       ) : summary.loading ? (
         <Skeleton className="h-[300px] rounded-[20px]" />
       ) : null}
@@ -122,8 +122,8 @@ export default function ItdbonePage() {
           onClose={() => setCollectOpen(false)}
           program="itdbone"
           pendingUsd={s.yield.pendingUsd}
-          card={card}
-          ledgerCard={card ? ledger.cards[card.id] : undefined}
+          cards={cards}
+          ledgerCards={ledger.cards}
           onConfirm={collect}
         />
       )}

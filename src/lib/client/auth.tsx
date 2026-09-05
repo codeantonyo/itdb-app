@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
+import { MAX_WALLETS } from "@/lib/itdb/config";
 import { REFERRAL_RE, referralCodeFor } from "@/lib/referral";
 
 export type Role = "admin" | "user";
@@ -223,13 +224,21 @@ export function useAuth() {
     syncToServer({ id: next.accountId, name: patch.name, username: patch.username });
   }, []);
 
-  const addWallet = useCallback((address: string) => {
+  /** Returns an error message, or null when the wallet was linked. */
+  const addWallet = useCallback((address: string): string | null => {
     const current = getSnapshot();
-    if (!current || !STELLAR_ADDRESS_RE.test(address)) return;
-    if (current.wallets.includes(address)) return;
+    if (!current) return "Sign in again.";
+    if (!STELLAR_ADDRESS_RE.test(address)) {
+      return "A Stellar address starts with G and has 56 characters.";
+    }
+    if (current.wallets.includes(address)) return "That wallet is already linked.";
+    if (current.wallets.length >= MAX_WALLETS) {
+      return `You can link up to ${MAX_WALLETS} wallets. Remove one first.`;
+    }
     const wallets = [...current.wallets, address];
     write({ ...current, wallets });
     syncToServer({ id: current.accountId, wallets });
+    return null;
   }, []);
 
   const removeWallet = useCallback((address: string) => {

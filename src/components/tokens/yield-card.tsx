@@ -3,7 +3,7 @@
 import { Clock } from "lucide-react";
 import { ExactFigure } from "@/components/shared/exact-figure";
 import { LedgerLine } from "@/components/shared/ledger-line";
-import { SimulatedNotice, SourceBadge } from "@/components/shared/simulated-notice";
+import { SourceBadge } from "@/components/shared/simulated-notice";
 import { Button } from "@/components/ui/button";
 import { formatRemaining } from "@/lib/client/cards";
 import type { YieldComputed } from "@/lib/server/accrual";
@@ -11,13 +11,17 @@ import { formatAmount, formatCurrency, formatExactAmount, formatExactCurrency } 
 
 interface YieldCardProps {
   y: YieldComputed;
-  tokenCode: string;
   minLabel: string;
   onCollect: () => void;
 }
 
-/** Pending daily yield: the headline figure, per-line breakdown, collect button. */
-export function YieldCard({ y, tokenCode, minLabel, onCollect }: YieldCardProps) {
+/**
+ * Pending daily yield: the headline figure, per-line breakdown, collect
+ * button. Accrual runs from the day the member first acquired the token
+ * on chain (see programInputs), so the figure reflects their full
+ * holding period, not the day they signed up.
+ */
+export function YieldCard({ y, minLabel, onCollect }: YieldCardProps) {
   const eligible = y.tier !== null;
   const canCollect = eligible && y.pendingUsd >= y.minCollectUsd && y.cooldownRemainingMs === 0;
 
@@ -73,10 +77,6 @@ export function YieldCard({ y, tokenCode, minLabel, onCollect }: YieldCardProps)
             : `Collect ${formatCurrency(y.pendingUsd)}`}
       </Button>
 
-      <SimulatedNotice className="mt-4">
-        <span className="font-semibold text-primary">Simulated yield.</span> {tokenCode} daily yield is a reference entitlement credited to your
-        ITDB account at live rates when you collect. Crypto lines are valued at the moment of collection.
-      </SimulatedNotice>
     </section>
   );
 }
