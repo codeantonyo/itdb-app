@@ -1,37 +1,54 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeftRight, ChevronRight, CreditCard, Download, ExternalLink, Gift, Settings, TrendingDown, TrendingUp, type LucideIcon } from "lucide-react";
-import { ItdbWordmark } from "@/components/brand/logo";
-import { AssetIcon } from "@/components/shared/asset-icon";
+import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Gift, Plus, type LucideIcon } from "lucide-react";
+import { AppBar } from "@/components/layout/app-bar";
+import { AreaChart } from "@/components/shared/area-chart";
+import { AssetRow } from "@/components/shared/asset-row";
 import { ExactFigure } from "@/components/shared/exact-figure";
 import { NetworkNotice } from "@/components/shared/network-notice";
-import { SectionHeader } from "@/components/shared/section-header";
 import { PaymentRow } from "@/components/shared/statement-row";
+import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/client/auth";
-import { isDustPayment, usePortfolio, type PortfolioAsset } from "@/lib/client/portfolio";
+import { isDustPayment, usePortfolio, type PortfolioPayment } from "@/lib/client/portfolio";
 import { useWalletLedger } from "@/lib/client/wallet-ledger";
-import { formatAmount, formatCurrency, formatExactAmount, formatExactCurrency, formatPercent, formatPrice } from "@/lib/format";
+import {
+  formatAmount,
+  formatCurrency,
+  formatExactAmount,
+  formatExactCurrency,
+  formatPercent,
+} from "@/lib/format";
 import { ITDB_TOKEN, itdbTierFor, itdboneTierFor, marketUrl, qrsTierFor } from "@/lib/itdb/config";
 import { cn } from "@/lib/utils";
 
-const TOKEN_PAGES: Record<string, { href: string; role: string; tier: (b: number) => { tier: number } | null }> = {
-  ITDB: { href: "/itdb", role: "Reserve token", tier: itdbTierFor },
-  ITDBONE: { href: "/itdbone", role: "Bank stablecoin", tier: itdboneTierFor },
-  QRS: { href: "/qrs", role: "Gold-referenced", tier: qrsTierFor },
+const TIER_OF: Record<string, (b: number) => { tier: number } | null> = {
+  ITDB: itdbTierFor,
+  ITDBONE: itdboneTierFor,
+  QRS: qrsTierFor,
 };
+const HREF_OF: Record<string, string> = { ITDB: "/itdb", ITDBONE: "/itdbone", QRS: "/qrs" };
 
-function QuickAction({ icon: Icon, label, href, external }: { icon: LucideIcon; label: string; href: string; external?: boolean }) {
+function greeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+/** An action inside the balance panel. */
+function PanelAction({ icon: Icon, label, href, external }: { icon: LucideIcon; label: string; href: string; external?: boolean }) {
   const inner = (
     <>
-      <span className="card flex size-[54px] items-center justify-center rounded-full text-gold">
-        <Icon className="size-[22px]" strokeWidth={2} />
+      <span className="flex size-10 items-center justify-center rounded-full bg-elevated text-gold">
+        <Icon className="size-[18px]" strokeWidth={2} />
       </span>
-      <span className="text-[12.5px] font-semibold text-muted">{label}</span>
+      <span className="text-[12px] font-medium text-muted">{label}</span>
     </>
   );
-  const cls = "flex flex-col items-center gap-2";
+  const cls = "tap flex flex-1 flex-col items-center gap-1.5 transition-opacity active:opacity-70";
   return external ? (
     <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
       {inner}
@@ -43,157 +60,156 @@ function QuickAction({ icon: Icon, label, href, external }: { icon: LucideIcon; 
   );
 }
 
-function AssetRow({ asset }: { asset: PortfolioAsset }) {
-  const page = TOKEN_PAGES[asset.code];
-  const tier = page?.tier(asset.balance) ?? null;
-  const up = (asset.change24h ?? 0) >= 0;
-  const inner = (
-    <div className="flex items-center gap-3 py-3">
-      <AssetIcon symbol={asset.code} image={asset.image} size="md" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[15px] font-semibold text-primary">{asset.name}</p>
-        <p className="tnum flex items-center gap-1.5 truncate text-[13px] text-muted">
-          {tier && <span className="shrink-0 rounded-md bg-gold-soft px-1.5 py-px text-[10.5px] font-bold uppercase tracking-wide text-gold">Tier {tier.tier}</span>}
-          {asset.priceUsd !== null ? (
-            <>
-              {formatPrice(asset.priceUsd)}
-              {asset.change24h !== null && <span className={cn("ml-1.5 font-semibold", up ? "text-success" : "text-danger")}>{formatPercent(asset.change24h)}</span>}
-            </>
-          ) : asset.resolved ? (
-            "No market yet"
-          ) : (
-            "Price unavailable"
-          )}
-        </p>
-      </div>
-      <div className="shrink-0 text-right">
-        <p className="tnum text-[15px] font-semibold text-primary">
-          {formatAmount(asset.balance, asset.isNative ? 2 : 0)} {asset.code}
-        </p>
-        <p className="tnum text-[13px] text-muted">{asset.priceUsd !== null ? formatCurrency(asset.valueUsd) : "—"}</p>
-      </div>
-      {page && <ChevronRight className="size-4 shrink-0 text-muted-2" />}
-    </div>
-  );
-  return page ? (
-    <Link href={page.href} className="block active:opacity-70">
-      {inner}
-    </Link>
-  ) : (
-    inner
-  );
+/** Group payments under Today / Yesterday / a date. */
+function groupByDay(payments: PortfolioPayment[]) {
+  const groups: { label: string; items: PortfolioPayment[] }[] = [];
+  const today = new Date().setHours(0, 0, 0, 0);
+  for (const p of payments) {
+    const day = new Date(p.at).setHours(0, 0, 0, 0);
+    const diff = Math.round((today - day) / 86_400_000);
+    const label =
+      diff <= 0
+        ? "Today"
+        : diff === 1
+          ? "Yesterday"
+          : new Date(p.at).toLocaleDateString("en-GB", { day: "numeric", month: "long" });
+    const last = groups.at(-1);
+    if (last && last.label === label) last.items.push(p);
+    else groups.push({ label, items: [p] });
+  }
+  return groups;
 }
 
 export default function HomePage() {
   const { session } = useAuth();
   const portfolio = usePortfolio();
   const ledger = useWalletLedger(!!session);
+  const [view, setView] = useState<"assets" | "activity">("assets");
 
   const availableUsd = Math.max(portfolio.totalUsd - ledger.fromAccountUsd, 0);
   const availableXlm = portfolio.xlmUsd > 0 ? availableUsd / portfolio.xlmUsd : 0;
   const positive = portfolio.change24hPercent >= -0.005;
-  const movedToCard = ledger.fromAccountUsd > 0.005 ? ledger.fromAccountUsd : 0;
-  const deposited = ledger.fromAccountUsd < -0.005 ? -ledger.fromAccountUsd : 0;
+  const firstName = session?.name.split(" ")[0] ?? "there";
+  const pending = portfolio.loading && portfolio.assets.length === 0;
+  const unavailable = portfolio.balancesUnknown || (!!portfolio.error && !portfolio.loading);
 
-  const firstName = session?.name.split(" ")[0] ?? "Member";
-  const activity = portfolio.payments.filter((p) => !isDustPayment(p, portfolio.prices)).slice(0, 6);
-  const showUnavailable = portfolio.balancesUnknown || (!!portfolio.error && !portfolio.loading);
-  const pendingFigures = portfolio.loading && portfolio.assets.length === 0;
+  const activity = useMemo(
+    () => portfolio.payments.filter((p) => !isDustPayment(p, portfolio.prices)).slice(0, 25),
+    [portfolio.payments, portfolio.prices],
+  );
+  const groups = useMemo(() => groupByDay(activity), [activity]);
+
+  const held = useMemo(
+    () => [...portfolio.assets].sort((a, b) => b.valueUsd - a.valueUsd),
+    [portfolio.assets],
+  );
 
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex items-center justify-between pt-[calc(18px+var(--safe-top))]">
-        <div>
-          <ItdbWordmark className="text-primary" />
-        </div>
-        <Link href="/settings" aria-label="Settings" className="tap card flex items-center justify-center rounded-full text-primary">
-          <Settings className="size-5" strokeWidth={1.8} />
-        </Link>
-      </header>
+    <div className="flex flex-col">
+      <AppBar title={`${greeting()}, ${firstName}`} avatarFor={session?.name ?? "Member"} />
 
-      <p className="font-display -mt-2 text-[22px] text-primary">Good day, {firstName}.</p>
-
-      {/* ---------------- Balance hero ---------------- */}
-      <section className="hero guilloche p-6">
-        <p className="text-[13px] font-medium text-muted">Available balance</p>
-        {pendingFigures ? (
-          <Skeleton className="mt-3 h-11 w-52 opacity-30" />
-        ) : showUnavailable && portfolio.assets.every((a) => a.balance === 0) ? (
-          <p className="font-display mt-2 text-[26px] text-muted">Unavailable</p>
+      {/* ---------------- Balance panel ---------------- */}
+      <section className="panel-navy engrave mt-1 px-5 pb-4 pt-5">
+        <p className="text-[13px] font-medium text-muted">Total balance</p>
+        {pending ? (
+          <Skeleton className="mt-2.5 h-10 w-48 opacity-30" />
+        ) : unavailable && portfolio.assets.every((a) => a.balance === 0) ? (
+          <p className="font-display mt-1.5 text-[28px] text-muted">Unavailable</p>
         ) : (
           <>
             <ExactFigure
               compact={formatCurrency(availableUsd)}
               exact={formatExactCurrency(availableUsd)}
-              className="font-display mt-1 block text-[42px] font-semibold leading-none tracking-tight text-primary"
-              exactClassName="text-[28px]"
+              className="font-display mt-1 block text-[40px] font-semibold leading-none text-primary"
+              exactClassName="text-[26px]"
             />
-            <ExactFigure compact={`≈ ${formatAmount(availableXlm, 2)} XLM`} exact={`≈ ${formatExactAmount(availableXlm, 7)} XLM`} className="mt-2 block text-[14px] text-muted" />
+            <div className="mt-2 flex items-center gap-2">
+              <span
+                className={cn(
+                  "tnum inline-flex items-center gap-1 text-[13.5px] font-semibold",
+                  positive ? "text-success" : "text-danger",
+                )}
+              >
+                {positive ? <ArrowUpRight className="size-3.5" /> : <ArrowDownLeft className="size-3.5" />}
+                {formatPercent(Math.abs(portfolio.change24hPercent) < 0.005 ? 0 : portfolio.change24hPercent)}
+              </span>
+              <ExactFigure
+                compact={`≈ ${formatAmount(availableXlm, 2)} XLM`}
+                exact={`≈ ${formatExactAmount(availableXlm, 7)} XLM`}
+                className="text-[13px] text-muted"
+              />
+            </div>
           </>
         )}
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <span className={cn("tnum inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[13px] font-semibold", positive ? "bg-success-soft text-success" : "bg-danger-soft text-danger")}>
-            {positive ? <TrendingUp className="size-3.5" /> : <TrendingDown className="size-3.5" />}
-            {formatPercent(Math.abs(portfolio.change24hPercent) < 0.005 ? 0 : portfolio.change24hPercent)} today
-          </span>
-          {deposited > 0 && <span className="tnum rounded-full bg-elevated px-2.5 py-1 text-[12.5px] text-muted">+{formatCurrency(deposited)} collected</span>}
-          {movedToCard > 0 && <span className="tnum rounded-full bg-elevated px-2.5 py-1 text-[12.5px] text-muted">{formatCurrency(movedToCard)} on card</span>}
+
+        <AreaChart points={portfolio.history.map((p) => p.v)} className="mt-3" height={56} />
+
+        <div className="mt-2 flex border-t border-hairline pt-3.5">
+          <PanelAction icon={ArrowLeftRight} label="Move" href="/cards" />
+          <PanelAction icon={Gift} label="Collect" href="/rewards" />
+          <PanelAction icon={Plus} label="Buy" href={marketUrl(ITDB_TOKEN)} external />
+          <PanelAction icon={ArrowUpRight} label="Portfolio" href="/portfolio" />
         </div>
       </section>
 
-      {/* ---------------- Quick actions ---------------- */}
-      <div className="grid grid-cols-4 gap-2">
-        <QuickAction icon={ArrowLeftRight} label="Move" href="/card" />
-        <QuickAction icon={Download} label="Collect" href="/itdbone" />
-        <QuickAction icon={ExternalLink} label="Buy" href={marketUrl(ITDB_TOKEN)} external />
-        <QuickAction icon={CreditCard} label="Card" href="/card" />
-      </div>
+      {unavailable && (
+        <NetworkNotice className="mt-4" message={portfolio.error} onRetry={portfolio.refresh} />
+      )}
 
-      {showUnavailable && <NetworkNotice message={portfolio.error} onRetry={portfolio.refresh} />}
+      {/* ---------------- Assets / Activity ---------------- */}
+      <Segmented
+        className="mt-5"
+        value={view}
+        onChange={setView}
+        options={[
+          { value: "assets", label: "Assets" },
+          { value: "activity", label: "Activity" },
+        ]}
+      />
 
-      {/* ---------------- Airdrop ---------------- */}
-      <Link href="/airdrop" className="card flex items-center gap-3.5 p-4 active:opacity-80">
-        <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-gold-soft text-gold">
-          <Gift className="size-6" strokeWidth={1.9} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-[15.5px] font-semibold text-primary">Founding Airdrop</span>
-          <span className="block text-[13px] leading-snug text-muted">
-            For members holding ITDB, ITDBONE and QRS
-          </span>
-        </span>
-        <ChevronRight className="size-4 shrink-0 text-muted-2" />
-      </Link>
-
-      {/* ---------------- Assets ---------------- */}
-      <section className="flex flex-col gap-3">
-        <SectionHeader title="Your assets" note={`${portfolio.walletCount} wallet${portfolio.walletCount === 1 ? "" : "s"}`} />
-        {pendingFigures ? (
-          <Skeleton className="h-[240px] rounded-[20px]" />
+      {view === "assets" ? (
+        pending ? (
+          <Skeleton className="mt-4 h-[260px] rounded-[18px]" />
         ) : (
-          <div className="card divide-y divide-hairline px-4">
-            {[...portfolio.assets.filter((a) => !a.isNative), ...portfolio.assets.filter((a) => a.isNative)].map((asset) => (
-              <AssetRow key={asset.id} asset={asset} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* ---------------- Activity ---------------- */}
-      <section className="flex flex-col gap-3">
-        <SectionHeader title="Recent activity" />
-        {portfolio.loading && activity.length === 0 ? (
-          <Skeleton className="h-[140px] rounded-[20px]" />
-        ) : activity.length === 0 ? (
-          <div className="card p-5 text-center text-[14.5px] text-muted">Payments and collections will appear here.</div>
-        ) : (
-          <div className="card divide-y divide-hairline px-4">
-            {activity.map((payment) => (
-              <PaymentRow key={payment.id} payment={payment} />
-            ))}
-          </div>
-        )}
-      </section>
+          <>
+            <div className="surface mt-4 divide-y divide-hairline">
+              {held.map((asset) => (
+                <AssetRow
+                  key={asset.id}
+                  asset={asset}
+                  href={HREF_OF[asset.code]}
+                  tier={TIER_OF[asset.code]?.(asset.balance)?.tier ?? null}
+                />
+              ))}
+            </div>
+            <Link
+              href="/portfolio"
+              className="tap mt-3 flex items-center justify-center text-[14px] font-semibold text-gold"
+            >
+              See full portfolio
+            </Link>
+          </>
+        )
+      ) : pending ? (
+        <Skeleton className="mt-4 h-[260px] rounded-[18px]" />
+      ) : activity.length === 0 ? (
+        <p className="surface mt-4 p-6 text-center text-[14.5px] text-muted">
+          Payments and collections will appear here.
+        </p>
+      ) : (
+        <div className="mt-4 flex flex-col gap-4">
+          {groups.map((g) => (
+            <div key={g.label}>
+              <p className="label mb-1.5 px-1">{g.label}</p>
+              <div className="surface divide-y divide-hairline px-4">
+                {g.items.map((p) => (
+                  <PaymentRow key={p.id} payment={p} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

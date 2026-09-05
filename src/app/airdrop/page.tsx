@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Check, Gift, Lock } from "lucide-react";
 import type { AirdropSummary } from "@/lib/server/airdrop";
 import { WithdrawPanel, type WithdrawOutcome } from "@/components/airdrop/withdraw-panel";
-import { PageHeader } from "@/components/layout/page-header";
+import { AppBar } from "@/components/layout/app-bar";
 import { ExactFigure } from "@/components/shared/exact-figure";
 import { LedgerLine } from "@/components/shared/ledger-line";
 import { NetworkNotice } from "@/components/shared/network-notice";
@@ -84,11 +84,7 @@ export default function AirdropPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        eyebrow="Airdrop"
-        title={s?.title ?? "Founding Airdrop"}
-        subtitle={s?.blurb ?? "A one-time distribution for members holding all three ITDB assets."}
-      />
+      <AppBar back title={s?.title ?? "Founding Airdrop"} subtitle="One-time distribution" />
 
       {summary.error && !s && <NetworkNotice message={summary.error} onRetry={summary.refresh} />}
 
@@ -97,7 +93,7 @@ export default function AirdropPage() {
       ) : s.claimed ? (
         <>
           {/* ---------------- Claimed: holdings value ---------------- */}
-          <section className="hero guilloche p-6">
+          <section className="panel-navy engrave p-6">
             <p className="text-[13px] font-medium text-muted">Your airdrop holdings</p>
             <ExactFigure
               compact={formatCurrency(s.remainingUsd)}
@@ -125,7 +121,7 @@ export default function AirdropPage() {
             return (
               <section key={kind} className="flex flex-col gap-3">
                 <SectionHeader title={KIND_LABEL[kind]} />
-                <div className="card px-4">
+                <div className="surface px-4">
                   {rows.map((l) => (
                     <LedgerLine
                       key={l.code}
@@ -178,7 +174,7 @@ export default function AirdropPage() {
           {s.withdrawals.length > 0 && (
             <section className="flex flex-col gap-3">
               <SectionHeader title="Withdrawals" />
-              <div className="card px-4">
+              <div className="surface px-4">
                 {[...s.withdrawals].reverse().map((w) => (
                   <LedgerLine
                     key={w.id}
@@ -199,7 +195,7 @@ export default function AirdropPage() {
       ) : (
         <>
           {/* ---------------- Unclaimed: eligibility ---------------- */}
-          <section className="hero guilloche p-6 text-center">
+          <section className="panel-navy engrave p-6 text-center">
             <span className="mx-auto flex size-16 items-center justify-center rounded-full bg-elevated">
               <Gift className="size-8 text-gold-light" strokeWidth={1.6} />
             </span>
@@ -214,7 +210,7 @@ export default function AirdropPage() {
 
           <section className="flex flex-col gap-3">
             <SectionHeader title="Who can claim" />
-            <div className="card px-4">
+            <div className="surface px-4">
               {s.requirements.map((r) => (
                 <LedgerLine
                   key={r.code}
@@ -248,7 +244,7 @@ export default function AirdropPage() {
             return (
               <section key={kind} className="flex flex-col gap-3">
                 <SectionHeader title={KIND_LABEL[kind]} />
-                <div className="card px-4">
+                <div className="surface px-4">
                   {rows.map((l) => (
                     <LedgerLine
                       key={l.code}

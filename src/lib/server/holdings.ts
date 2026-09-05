@@ -31,13 +31,30 @@ export interface WalletHoldings {
   balances: Record<string, number>;
 }
 
+/**
+ * Short-lived per-instance cache. One page view can hit several routes
+ * that each need the same wallet (the token summary, the rewards hub,
+ * the airdrop check), and every miss is a Horizon call against a
+ * per-IP rate limit. Only successful reads are cached — a failure must
+ * be retried, never remembered.
+ */
+const holdingsCache = new Map<string, { at: number; value: WalletHoldings }>();
+const HOLDINGS_TTL = 15_000;
+
 export async function walletHoldings(address: string): Promise<WalletHoldings> {
+  const cached = holdingsCache.get(address);
+  if (cached && Date.now() - cached.at < HOLDINGS_TTL) return cached.value;
+
   const url = `${HORIZON}/accounts/${address}`;
   const res = await horizonJson<{ balances: HorizonBalance[] }>(url, {
     next: { revalidate: 30 },
   });
   if (res.kind === "unavailable") throw new HorizonUnavailableError(res.status, url);
-  if (res.kind === "absent") return { address, exists: false, balances: {} };
+  if (res.kind === "absent") {
+    const value = { address, exists: false, balances: {} };
+    holdingsCache.set(address, { at: Date.now(), value });
+    return value;
+  }
 
   const balances: Record<string, number> = {};
   for (const b of res.data.balances) {
@@ -47,7 +64,9 @@ export async function walletHoldings(address: string): Promise<WalletHoldings> {
       balances[`${b.asset_code}:${b.asset_issuer}`] = parseFloat(b.balance);
     }
   }
-  return { address, exists: true, balances };
+  const value = { address, exists: true, balances };
+  holdingsCache.set(address, { at: Date.now(), value });
+  return value;
 }
 
 export const holdingKey = (t: RegistryToken) => `${t.code}:${t.issuer}`;

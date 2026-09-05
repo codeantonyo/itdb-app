@@ -64,7 +64,7 @@ function AppBar({ title, onBack, action }: { title: string; onBack: () => void; 
 /** A numbered section of the application form. */
 function FormSection({ step, title, children }: { step: number; title: string; children: React.ReactNode }) {
   return (
-    <section className="card p-4">
+    <section className="surface p-4">
       <h2 className="flex items-center gap-2.5 text-[15px] font-semibold text-primary">
         <span className="flex size-7 items-center justify-center rounded-full bg-gold text-[13px] font-bold text-gold-ink">
           {step}
@@ -268,7 +268,7 @@ export default function LoginPage() {
   if (phase === "cover") {
     return (
       <div className="flex min-h-dvh flex-col">
-        <div className="hero guilloche relative flex flex-1 flex-col items-center justify-center rounded-none border-0 px-8 pb-16 pt-[calc(48px+var(--safe-top))] text-center">
+        <div className="panel-navy engrave relative flex flex-1 flex-col items-center justify-center rounded-none border-0 px-8 pb-16 pt-[calc(48px+var(--safe-top))] text-center">
           <div className="flex size-[86px] items-center justify-center rounded-[26px] border border-[rgba(212,160,23,0.5)] bg-white/5">
             <ItdbMark className="size-14" />
           </div>

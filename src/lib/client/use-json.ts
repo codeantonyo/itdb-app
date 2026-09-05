@@ -1,75 +1,39 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-
-interface JsonState<T> {
-  forUrl: string | null;
-  data: T | null;
-  error: string | null;
-  status: number | null;
-}
+import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { load, peek, subscribe, type CacheEntry } from "./fetch-cache";
 
 export interface UseJsonResult<T> {
   data: T | null;
   loading: boolean;
   error: string | null;
-  /** HTTP status of the last failed request (503 = network busy) */
+  /** HTTP status of the last failure (503 = network busy) */
   status: number | null;
   refresh: () => void;
 }
 
+const SERVER: CacheEntry = { data: null, error: null, status: null, at: 0, loading: true };
+
 /**
- * Minimal polling JSON fetcher. A failed refresh keeps the last good
- * data (and reports the error) rather than blanking the screen — a
- * rate-limited Horizon must never read as "you have nothing" (§6.4).
+ * Read a JSON endpoint through the shared cache.
+ *
+ * Every component asking for the same URL shares one request and one
+ * result, so mounting three cards that all need the portfolio costs one
+ * fetch. Polling only runs while the tab is visible, and a failed poll
+ * keeps the last good data rather than blanking the screen.
  */
 export function useJson<T>(url: string | null, intervalMs = 60_000): UseJsonResult<T> {
-  const [state, setState] = useState<JsonState<T>>({
-    forUrl: null,
-    data: null,
-    error: null,
-    status: null,
-  });
-
-  const load = useCallback(async () => {
-    if (!url) return;
-    try {
-      const res = await fetch(url);
-      if (!res.ok) {
-        let message = `Request failed (${res.status})`;
-        try {
-          const body = (await res.json()) as { error?: string };
-          if (body.error) message = body.error;
-        } catch {
-          /* no body */
-        }
-        setState((prev) => ({
-          forUrl: url,
-          data: prev.forUrl === url ? prev.data : null,
-          error: message,
-          status: res.status,
-        }));
-        return;
-      }
-      const json = (await res.json()) as T;
-      setState({ forUrl: url, data: json, error: null, status: null });
-    } catch (e) {
-      const message = e instanceof Error ? e.message : "Network error";
-      setState((prev) => ({
-        forUrl: url,
-        data: prev.forUrl === url ? prev.data : null,
-        error: message,
-        status: 0,
-      }));
-    }
-  }, [url]);
+  const entry = useSyncExternalStore(
+    useCallback((fn) => (url ? subscribe(url, fn) : () => {}), [url]),
+    useCallback(() => (url ? peek<T>(url) : (SERVER as CacheEntry<T>)), [url]),
+    useCallback(() => SERVER as CacheEntry<T>, []),
+  );
 
   useEffect(() => {
     if (!url) return;
-    queueMicrotask(load);
-    // Poll only while the tab is visible; catch up when the member returns.
+    void load(url, intervalMs);
     const tick = () => {
-      if (!document.hidden) load();
+      if (!document.hidden) void load(url, intervalMs);
     };
     const id = setInterval(tick, intervalMs);
     document.addEventListener("visibilitychange", tick);
@@ -77,15 +41,18 @@ export function useJson<T>(url: string | null, intervalMs = 60_000): UseJsonResu
       clearInterval(id);
       document.removeEventListener("visibilitychange", tick);
     };
-  }, [url, intervalMs, load]);
+  }, [url, intervalMs]);
 
-  const current = state.forUrl === url ? state : null;
+  const refresh = useCallback(() => {
+    if (url) void load(url, intervalMs, true);
+  }, [url, intervalMs]);
 
   return {
-    data: url ? (current?.data ?? null) : null,
-    loading: url !== null && current === null,
-    error: current?.error ?? null,
-    status: current?.status ?? null,
-    refresh: load,
+    data: url ? entry.data : null,
+    // Only "loading" before the first successful read.
+    loading: url !== null && entry.data === null && entry.error === null,
+    error: entry.error,
+    status: entry.status,
+    refresh,
   };
 }

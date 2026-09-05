@@ -3,6 +3,7 @@
 import { useCallback, useSyncExternalStore } from "react";
 import { MAX_WALLETS } from "@/lib/itdb/config";
 import { REFERRAL_RE, referralCodeFor } from "@/lib/referral";
+import { clearCache } from "./fetch-cache";
 
 export type Role = "admin" | "user";
 
@@ -212,6 +213,8 @@ export function useAuth() {
     // race the Telegram effect back into a signed-in state.
     setAutoLoginSuppressed(true);
     fetch("/api/auth/session", { method: "DELETE" }).catch(() => {});
+    // Never let the next member see the previous one's cached figures.
+    clearCache();
     write(null);
   }, []);
 

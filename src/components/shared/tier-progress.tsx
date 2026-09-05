@@ -37,7 +37,7 @@ export function TierProgress({ rows, currentTier, balance, unit, className }: Ti
 
   return (
     <>
-      <section className={cn("card p-5", className)}>
+      <section className={cn("surface p-5", className)}>
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <span className="font-display flex size-11 items-center justify-center rounded-full bg-gold text-[18px] font-semibold text-gold-ink">

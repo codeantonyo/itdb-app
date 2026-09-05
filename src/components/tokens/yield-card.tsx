@@ -26,7 +26,7 @@ export function YieldCard({ y, minLabel, onCollect }: YieldCardProps) {
   const canCollect = eligible && y.pendingUsd >= y.minCollectUsd && y.cooldownRemainingMs === 0;
 
   return (
-    <section className="card p-5">
+    <section className="surface p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[13px] font-medium text-muted">Yield built up</p>

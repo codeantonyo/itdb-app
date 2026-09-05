@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { QrsSummary } from "@/app/api/qrs/route";
-import { PageHeader } from "@/components/layout/page-header";
+import { AppBar } from "@/components/layout/app-bar";
 import { ExactFigure } from "@/components/shared/exact-figure";
 import { LedgerLine } from "@/components/shared/ledger-line";
 import { NetworkNotice } from "@/components/shared/network-notice";
@@ -56,7 +56,7 @@ export default function QrsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader eyebrow="Gold-referenced reserve token" title="QRS" subtitle="Daily yield in USD and crypto, with a gold and precious-metal reference." />
+      <AppBar back title="QRS" subtitle="Gold-referenced reserve token" />
 
       <TokenHeader code="QRS" role="Gold-referenced" asset={asset} marketUrl={marketUrl(QRS_TOKEN)} loading={portfolio.loading} tierLabel={s?.tier ? `Tier ${s.tier.tier}` : null} />
 
@@ -80,7 +80,7 @@ export default function QrsPage() {
       <section className="flex flex-col gap-3">
         <SectionHeader title="Gold & metals reference" note="simulated" />
         {s ? (
-          <div className="card p-5">
+          <div className="surface p-5">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-[13px] font-medium text-muted">Gold reference</p>

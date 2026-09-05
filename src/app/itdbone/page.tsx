@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Check, Minus } from "lucide-react";
 import type { ItdboneSummary } from "@/app/api/itdbone/route";
-import { PageHeader } from "@/components/layout/page-header";
+import { AppBar } from "@/components/layout/app-bar";
 import { NetworkNotice } from "@/components/shared/network-notice";
 import { SectionHeader } from "@/components/shared/section-header";
 import { TierProgress } from "@/components/shared/tier-progress";
@@ -67,7 +67,7 @@ export default function ItdbonePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader eyebrow="Bank stablecoin" title="ITDBONE" subtitle="Daily allowances, APY and perks that rise with what you hold." />
+      <AppBar back title="ITDBONE" subtitle="Bank stablecoin" />
 
       <TokenHeader code="ITDBONE" role="The bank's stablecoin" asset={asset} marketUrl={marketUrl(ITDBONE_TOKEN)} loading={portfolio.loading} tierLabel={s?.tier ? `Tier ${s.tier.tier}` : null} />
 
@@ -91,7 +91,7 @@ export default function ItdbonePage() {
       {s?.tier && (
         <section className="flex flex-col gap-3">
           <SectionHeader title="Your perks" />
-          <div className="card p-5">
+          <div className="surface p-5">
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl bg-elevated px-3.5 py-3">
                 <p className="text-[12px] text-muted">APY</p>

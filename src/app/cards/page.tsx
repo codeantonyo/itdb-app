@@ -5,7 +5,7 @@ import { ArrowLeftRight, Check, Copy, CreditCard, Plus, Snowflake, Trash2, type 
 import { OpenCardPanel } from "@/components/card/open-card-panel";
 import { TransferPanel } from "@/components/card/transfer-panel";
 import { VirtualCardVisual } from "@/components/card/virtual-card";
-import { PageHeader } from "@/components/layout/page-header";
+import { AppBar } from "@/components/layout/app-bar";
 import { ExactFigure } from "@/components/shared/exact-figure";
 import { LedgerLine } from "@/components/shared/ledger-line";
 import { SectionHeader } from "@/components/shared/section-header";
@@ -45,7 +45,7 @@ function ActionTile({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "card tap flex flex-col items-start gap-2.5 p-4 text-left transition-opacity",
+        "surface tap flex flex-col items-start gap-2.5 p-4 text-left transition-opacity",
         disabled && "opacity-45",
         active && "border-gold",
       )}
@@ -165,20 +165,19 @@ export default function CardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        eyebrow={`Up to ${MAX_CARDS} per account`}
+      <AppBar
         title="Your cards"
         subtitle={
           cards.length > 0
             ? `${cards.length} of ${MAX_CARDS} open · funded by your ITDB account`
-            : "Visa or Mastercard, funded by your ITDB account."
+            : "Visa or Mastercard, funded by your ITDB account"
         }
       />
 
       {!ready ? (
         <Skeleton className="h-[230px] rounded-[20px]" />
       ) : cards.length === 0 ? (
-        <section className="hero guilloche flex flex-col items-center px-6 py-10 text-center">
+        <section className="panel-navy engrave flex flex-col items-center px-6 py-10 text-center">
           <span className="flex size-16 items-center justify-center rounded-full bg-elevated">
             <CreditCard className="size-7 text-gold-light" strokeWidth={1.6} />
           </span>
@@ -240,7 +239,7 @@ export default function CardPage() {
 
           {/* ---------------- Selected card record ---------------- */}
           {active && (
-            <section className="card px-5 py-2">
+            <section className="surface px-5 py-2">
               <LedgerLine
                 label="Card balance"
                 value={
@@ -312,11 +311,11 @@ export default function CardPage() {
           <section className="flex flex-col gap-3">
             <SectionHeader title="Card activity" />
             {cardActivity.length === 0 ? (
-              <div className="card p-5 text-center text-[14.5px] text-muted">
+              <div className="surface p-5 text-center text-[14.5px] text-muted">
                 Money moved to and from your cards will appear here.
               </div>
             ) : (
-              <div className="card divide-y divide-hairline px-4">
+              <div className="surface divide-y divide-hairline px-4">
                 {cardActivity.map((p) => (
                   <PaymentRow key={p.id} payment={p} />
                 ))}

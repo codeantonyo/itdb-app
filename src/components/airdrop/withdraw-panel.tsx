@@ -131,8 +131,8 @@ export function WithdrawPanel({
         <div>
           <p className="text-[15px] leading-relaxed text-muted">
             {cards.length === 0
-              ? "You need a card before you can withdraw. Open one from the Card tab, then come back."
-              : "Your card is frozen or still registering. Unfreeze it from the Card tab, then come back."}
+              ? "You need a card before you can withdraw. Open one from the Cards tab, then come back."
+              : "Your card is frozen or still registering. Unfreeze it from the Cards tab, then come back."}
           </p>
           <Button size="lg" className="mt-4" onClick={close}>
             Close

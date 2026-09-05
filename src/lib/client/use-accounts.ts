@@ -1,55 +1,51 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import type { AccountResponse } from "@/lib/stellar/types";
+import { load, peek, subscribe } from "./fetch-cache";
 
-interface State {
-  forKey: string | null;
-  data: AccountResponse[] | null;
-  error: string | null;
-}
+const urlFor = (address: string) => `/api/account/${address}`;
 
 /**
- * Fetches several Stellar accounts in parallel and polls them together —
- * the data source behind multi-wallet portfolios. 120s cadence: on-chain
- * balances rarely change minute-to-minute and every mutation path
- * refreshes explicitly.
+ * Live balances for every linked wallet, read through the shared cache.
+ *
+ * Each address is its own cache entry, so two pages showing the same
+ * wallet cost one request between them. 120s cadence: on-chain balances
+ * rarely move minute to minute and every mutation refreshes explicitly.
  */
 export function useAccounts(addresses: string[], intervalMs = 120_000) {
   const key = addresses.join(",");
-  const [state, setState] = useState<State>({ forKey: null, data: null, error: null });
 
-  const load = useCallback(async () => {
-    if (!key) return;
-    const targets = key.split(",");
-    try {
-      const results = await Promise.all(
-        targets.map(async (address) => {
-          const res = await fetch(`/api/account/${address}`);
-          if (!res.ok) {
-            const body = (await res.json().catch(() => ({}))) as { error?: string };
-            throw new Error(body.error ?? `Account fetch failed (${res.status})`);
-          }
-          return (await res.json()) as AccountResponse;
-        }),
-      );
-      setState({ forKey: key, data: results, error: null });
-    } catch (e) {
-      const message = e instanceof Error ? e.message : "Network error";
-      // Keep the last good balances; never replace them with nothing.
-      setState((prev) => ({
-        forKey: key,
-        data: prev.forKey === key ? prev.data : null,
-        error: message,
-      }));
-    }
-  }, [key]);
+  const snapshot = useSyncExternalStore(
+    useCallback(
+      (fn) => {
+        const offs = key ? key.split(",").map((a) => subscribe(urlFor(a), fn)) : [];
+        return () => offs.forEach((off) => off());
+      },
+      [key],
+    ),
+    useCallback(() => {
+      if (!key) return "";
+      // A cheap string fingerprint keeps the snapshot referentially
+      // stable; the real objects are read in the memo below.
+      return key
+        .split(",")
+        .map((a) => {
+          const e = peek<AccountResponse>(urlFor(a));
+          return `${e.at}:${e.error ?? ""}`;
+        })
+        .join("|");
+    }, [key]),
+    useCallback(() => "", []),
+  );
 
   useEffect(() => {
     if (!key) return;
-    queueMicrotask(load);
+    const addrs = key.split(",");
+    const run = () => addrs.forEach((a) => void load(urlFor(a), intervalMs));
+    run();
     const tick = () => {
-      if (!document.hidden) load();
+      if (!document.hidden) run();
     };
     const id = setInterval(tick, intervalMs);
     document.addEventListener("visibilitychange", tick);
@@ -57,14 +53,26 @@ export function useAccounts(addresses: string[], intervalMs = 120_000) {
       clearInterval(id);
       document.removeEventListener("visibilitychange", tick);
     };
-  }, [key, intervalMs, load]);
+  }, [key, intervalMs]);
 
-  const current = state.forKey === key ? state : null;
+  const refresh = useCallback(() => {
+    if (!key) return;
+    key.split(",").forEach((a) => void load(urlFor(a), intervalMs, true));
+  }, [key, intervalMs]);
 
-  return {
-    data: key ? (current?.data ?? null) : null,
-    loading: key !== "" && current === null,
-    error: current?.error ?? null,
-    refresh: load,
-  };
+  return useMemo(() => {
+    if (!key) return { data: null, loading: false, error: null, refresh };
+    const entries = key.split(",").map((a) => peek<AccountResponse>(urlFor(a)));
+    const data = entries.map((e) => e.data).filter((d): d is AccountResponse => d !== null);
+    const error = entries.find((e) => e.error)?.error ?? null;
+    return {
+      // Partial results beat none: show the wallets that answered.
+      data: data.length > 0 ? data : null,
+      loading: data.length === 0 && !error,
+      error,
+      refresh,
+    };
+    // `snapshot` is the change signal from the store above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, snapshot, refresh]);
 }

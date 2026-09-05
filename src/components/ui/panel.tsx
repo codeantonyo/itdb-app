@@ -56,7 +56,7 @@ export function Panel({ open, title, onClose, children, className }: PanelProps)
         aria-modal
         aria-label={title}
         className={cn(
-          "sheet-surface relative w-full max-w-[460px] rounded-t-[26px] pb-[max(20px,var(--safe-bottom))] transition-transform duration-350 ease-[cubic-bezier(0.4,0,0.2,1)]",
+          "sheet relative w-full max-w-[460px] rounded-t-[26px] pb-[max(20px,var(--safe-bottom))] transition-transform duration-350 ease-[cubic-bezier(0.4,0,0.2,1)]",
           shown ? "translate-y-0" : "translate-y-full",
           className,
         )}

@@ -29,7 +29,7 @@ export function TokenHeader({ code, role, asset, marketUrl, loading, tierLabel }
   const pending = loading && !asset;
 
   return (
-    <section className="hero guilloche p-5">
+    <section className="panel-navy engrave p-5">
       <div className="flex items-center gap-3.5">
         {pending ? <Skeleton className="size-[68px] rounded-full opacity-40" /> : <AssetIcon symbol={code} image={asset?.image} size="xl" />}
         <div className="min-w-0 flex-1">
@@ -97,7 +97,7 @@ export function TokenHeader({ code, role, asset, marketUrl, loading, tierLabel }
         </div>
       </div>
 
-      <a href={marketUrl} target="_blank" rel="noopener noreferrer" className="cta-primary mt-4 flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl text-[15.5px] font-semibold">
+      <a href={marketUrl} target="_blank" rel="noopener noreferrer" className="cta mt-4 flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl text-[15.5px] font-semibold">
         Trade {code} on LOBSTR
         <ExternalLink className="size-4" />
       </a>

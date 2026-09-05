@@ -113,7 +113,7 @@ export function VirtualCardVisual({
       >
         {/* FRONT */}
         <div
-          className={cn(face, config.card, config.sheen && "card-sheen", "guilloche flex flex-col")}
+          className={cn(face, config.card, config.sheen && "card-sheen", "engrave flex flex-col")}
           style={config.bg}
         >
           <div className="relative flex items-start justify-between">

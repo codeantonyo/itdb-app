@@ -6,100 +6,107 @@
 /* ==================================================================
    MERIDIAN — the ITDB design system.
 
-   A conventional banking app in an institution's colours: a bottom tab
-   bar, rounded cards with soft shadows, a balance hero with quick
-   actions, list rows, bottom sheets. Deep navy, gold leaf, a cold
-   institutional blue for data, parchment for light surfaces. Serif
-   display for headings and the big figures, sans for everything else.
+   Palette and type are fixed: deep navy, gold leaf, institutional blue
+   for data, parchment for light. Playfair for figures of record, Inter
+   for everything else.
+
+   The structure is a modern fintech app: a compact top bar, one primary
+   surface per screen, segmented views instead of endless stacked lists,
+   grouped list rows, and a five-tab bar. Elevation is carried by tone
+   and hairlines rather than heavy shadows.
    ================================================================== */
 
 :root {
-  /* ---------------- MERIDIAN · Light (parchment) ---------------- */
+  /* ---------------- Light (parchment) ---------------- */
   --m-canvas: #f4efe4;
   --m-canvas-2: #ebe4d3;
   --m-ink: #0b1d3a;
   --m-surface: #fffdf8;
-  --m-elevated: rgba(11, 29, 58, 0.06);
-  --m-border: rgba(11, 29, 58, 0.1);
-  --m-border-gold: rgba(154, 114, 16, 0.45);
-  --m-muted: rgba(11, 29, 58, 0.66);
-  --m-muted-2: rgba(11, 29, 58, 0.45);
+  --m-surface-2: #f7f2e7;
+  --m-elevated: rgba(11, 29, 58, 0.055);
+  --m-border: rgba(11, 29, 58, 0.09);
+  --m-border-gold: rgba(154, 114, 16, 0.4);
+  --m-muted: rgba(11, 29, 58, 0.62);
+  --m-muted-2: rgba(11, 29, 58, 0.42);
 
   --m-gold: #9a7210;
   --m-gold-light: #c99a1d;
-  --m-gold-soft: rgba(154, 114, 16, 0.12);
+  --m-gold-soft: rgba(154, 114, 16, 0.11);
   --m-gold-ink: #06162f;
   --m-data: #1f5fa8;
-  --m-data-soft: rgba(31, 95, 168, 0.12);
+  --m-data-soft: rgba(31, 95, 168, 0.11);
   --m-success: #1f8f66;
-  --m-success-soft: rgba(31, 143, 102, 0.13);
+  --m-success-soft: rgba(31, 143, 102, 0.12);
   --m-danger: #b8432f;
-  --m-danger-soft: rgba(184, 67, 47, 0.12);
+  --m-danger-soft: rgba(184, 67, 47, 0.11);
 
   --m-hero-a: #0b285a;
   --m-hero-b: #06162f;
 
-  --shadow-card: 0 4px 16px rgba(11, 29, 58, 0.07);
-  --shadow-hero: 0 16px 40px rgba(11, 29, 58, 0.22);
-  --shadow-nav: 0 -4px 20px rgba(11, 29, 58, 0.08);
+  --shadow-sm: 0 1px 2px rgba(11, 29, 58, 0.05);
+  --shadow-md: 0 4px 18px rgba(11, 29, 58, 0.07);
+  --shadow-lg: 0 14px 38px rgba(11, 29, 58, 0.16);
 
   --m-shimmer-a: rgba(11, 29, 58, 0.05);
-  --m-shimmer-b: rgba(11, 29, 58, 0.1);
+  --m-shimmer-b: rgba(11, 29, 58, 0.09);
 
-  --m-nav: rgba(255, 253, 248, 0.96);
+  --m-bar: rgba(255, 253, 248, 0.92);
   --m-sheet: #fffdf8;
-  --m-globe-ink: rgba(11, 29, 58, 0.06);
-  --m-guilloche-ink: rgba(255, 233, 163, 0.07);
+  --m-track: rgba(11, 29, 58, 0.07);
+  /* Ambient globe: barely there, never competing with content */
+  --m-globe-ink: rgba(11, 29, 58, 0.04);
 
-  --ease-inst: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
 
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .dark {
-  /* ---------------- MERIDIAN · Dark (navy, default) ---------------- */
-  --m-canvas: #06162f;
-  --m-canvas-2: #0b285a;
+  /* ---------------- Dark (navy, default) ---------------- */
+  --m-canvas: #050f21;
+  --m-canvas-2: #08183a;
   --m-ink: #f4efe4;
-  --m-surface: #0c2149;
-  --m-elevated: rgba(255, 255, 255, 0.07);
-  --m-border: rgba(142, 203, 255, 0.14);
-  --m-border-gold: rgba(212, 160, 23, 0.45);
-  --m-muted: rgba(244, 239, 228, 0.66);
-  --m-muted-2: rgba(244, 239, 228, 0.45);
+  --m-surface: #0b1c3d;
+  --m-surface-2: #102547;
+  --m-elevated: rgba(255, 255, 255, 0.06);
+  --m-border: rgba(142, 203, 255, 0.12);
+  --m-border-gold: rgba(212, 160, 23, 0.38);
+  --m-muted: rgba(244, 239, 228, 0.62);
+  --m-muted-2: rgba(244, 239, 228, 0.42);
 
   --m-gold: #d4a017;
   --m-gold-light: #ffe9a3;
-  --m-gold-soft: rgba(212, 160, 23, 0.15);
+  --m-gold-soft: rgba(212, 160, 23, 0.13);
   --m-gold-ink: #06162f;
   --m-data: #8ecbff;
-  --m-data-soft: rgba(142, 203, 255, 0.14);
+  --m-data-soft: rgba(142, 203, 255, 0.12);
   --m-success: #4fc99a;
-  --m-success-soft: rgba(79, 201, 154, 0.14);
+  --m-success-soft: rgba(79, 201, 154, 0.13);
   --m-danger: #e0715f;
-  --m-danger-soft: rgba(224, 113, 95, 0.14);
+  --m-danger-soft: rgba(224, 113, 95, 0.13);
 
-  --m-hero-a: #123a7a;
-  --m-hero-b: #071b3d;
+  --m-hero-a: #14417f;
+  --m-hero-b: #071c3f;
 
-  --shadow-card: 0 6px 20px rgba(0, 0, 0, 0.28);
-  --shadow-hero: 0 20px 48px rgba(0, 0, 0, 0.45);
-  --shadow-nav: 0 -6px 24px rgba(0, 0, 0, 0.35);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 6px 22px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.45);
 
-  --m-shimmer-a: rgba(255, 255, 255, 0.05);
-  --m-shimmer-b: rgba(255, 255, 255, 0.11);
+  --m-shimmer-a: rgba(255, 255, 255, 0.045);
+  --m-shimmer-b: rgba(255, 255, 255, 0.1);
 
-  --m-nav: rgba(8, 26, 56, 0.97);
-  --m-sheet: #0b2044;
-  --m-globe-ink: rgba(142, 203, 255, 0.08);
-  --m-guilloche-ink: rgba(255, 233, 163, 0.06);
+  --m-bar: rgba(5, 15, 33, 0.92);
+  --m-sheet: #0b1c3d;
+  --m-track: rgba(255, 255, 255, 0.08);
+  --m-globe-ink: rgba(142, 203, 255, 0.045);
 }
 
 @theme inline {
   --color-primary: var(--m-ink);
   --color-canvas: var(--m-canvas);
-  --color-card: var(--m-surface);
+  --color-surface: var(--m-surface);
+  --color-surface-2: var(--m-surface-2);
   --color-elevated: var(--m-elevated);
   --color-hairline: var(--m-border);
   --color-hairline-gold: var(--m-border-gold);
@@ -123,8 +130,7 @@
 
 html {
   height: 100%;
-  /* Older members: a comfortable base size, never below 16px */
-  font-size: 16px;
+  font-size: 16px; /* never below 16 — older members are a real constraint */
 }
 
 body {
@@ -135,97 +141,118 @@ body {
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none;
   min-height: 100%;
-  transition: background-color 0.4s var(--ease-inst);
 }
 
 .font-display {
-  font-family: var(--font-playfair), Georgia, "Times New Roman", serif;
-  letter-spacing: -0.01em;
+  font-family: var(--font-playfair), Georgia, serif;
+  letter-spacing: -0.015em;
 }
 
 /* ------------------------------------------------------------------ */
 /*  Surfaces                                                           */
 /* ------------------------------------------------------------------ */
 
-/* Card — the standard content surface */
-.card {
+/* The standard content surface */
+.surface {
   background: var(--m-surface);
   border: 1px solid var(--m-border);
-  border-radius: 20px;
-  box-shadow: var(--shadow-card);
+  border-radius: 18px;
+  box-shadow: var(--shadow-sm);
 }
 
-/* Hero — the balance card and token headers: navy, gold hairline */
-.hero {
+/* A nested block inside a surface */
+.inset {
+  background: var(--m-elevated);
+  border-radius: 14px;
+}
+
+/* The one navy statement panel per screen */
+.panel-navy {
   position: relative;
   overflow: hidden;
   color: #f4efe4;
-  background:
-    radial-gradient(120% 90% at 100% 0%, rgba(212, 160, 23, 0.2) 0%, transparent 55%),
-    linear-gradient(160deg, var(--m-hero-a) 0%, var(--m-hero-b) 75%);
-  border: 1px solid rgba(212, 160, 23, 0.45);
-  border-radius: 24px;
-  box-shadow: var(--shadow-hero);
-  /* Re-scope tokens so every utility inside reads cream on navy */
-  --m-canvas: #06162f;
+  background: linear-gradient(155deg, var(--m-hero-a) 0%, var(--m-hero-b) 78%);
+  border-radius: 22px;
+  box-shadow: var(--shadow-lg);
+  /* Re-scope tokens so utilities read correctly on navy in both themes */
   --m-ink: #f4efe4;
   --m-muted: rgba(244, 239, 228, 0.7);
   --m-muted-2: rgba(244, 239, 228, 0.5);
-  --m-border: rgba(244, 239, 228, 0.16);
-  --m-elevated: rgba(255, 255, 255, 0.1);
-  --m-gold: #d4a017;
-  --m-gold-light: #ffe9a3;
-  --m-gold-soft: rgba(212, 160, 23, 0.2);
+  --m-border: rgba(255, 255, 255, 0.14);
+  --m-elevated: rgba(255, 255, 255, 0.09);
+  --m-track: rgba(255, 255, 255, 0.16);
+  --m-gold: #ffe9a3;
   --m-success: #4fc99a;
   --m-danger: #e0715f;
 }
-.hero > * {
+.panel-navy > * {
   position: relative;
 }
 
-/* Guilloché — banknote line-work as layered fine rings */
-.guilloche::before {
+/* Fine engraved rings — a whisper of banknote, never a texture */
+.engrave::before {
   content: "";
   position: absolute;
-  inset: -40%;
+  inset: -50%;
   pointer-events: none;
-  background-image:
-    repeating-radial-gradient(circle at 20% 30%, var(--m-guilloche-ink) 0 1px, transparent 1px 8px),
-    repeating-radial-gradient(circle at 85% 80%, var(--m-guilloche-ink) 0 1px, transparent 1px 10px);
-  mask-image: radial-gradient(90% 90% at 50% 50%, black 30%, transparent 100%);
+  background-image: repeating-radial-gradient(
+    circle at 78% 12%,
+    rgba(255, 233, 163, 0.05) 0 1px,
+    transparent 1px 9px
+  );
+  mask-image: radial-gradient(70% 70% at 78% 12%, black, transparent 75%);
 }
 
-/* Bottom sheet surface */
-.sheet-surface {
+/* Top bar and tab bar */
+.bar {
+  background: var(--m-bar);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+}
+
+/* Bottom sheet */
+.sheet {
   background: var(--m-sheet);
-  border: 1px solid var(--m-border-gold);
-  border-bottom: none;
-  box-shadow: 0 -16px 48px rgba(0, 0, 0, 0.35);
-}
-
-/* Bottom tab bar */
-.tab-bar {
-  background: var(--m-nav);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   border-top: 1px solid var(--m-border);
-  box-shadow: var(--shadow-nav);
+  box-shadow: 0 -14px 44px rgba(0, 0, 0, 0.3);
 }
 
-/* Primary CTA — gold leaf */
-.cta-primary {
-  background: linear-gradient(180deg, #ffe9a3 0%, #d4a017 100%);
-  color: #06162f;
-  box-shadow: 0 8px 20px rgba(212, 160, 23, 0.28);
+/* Segmented control */
+.segmented {
+  display: flex;
+  padding: 3px;
+  background: var(--m-track);
+  border-radius: 12px;
 }
-
-/* Small-caps label */
-.eyebrow {
-  font-size: 12px;
+.segmented-item {
+  flex: 1;
+  min-height: 38px;
+  border-radius: 9px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  color: var(--m-muted);
+  transition:
+    color 0.25s var(--ease),
+    background-color 0.25s var(--ease);
+}
+.segmented-item[data-active="true"] {
+  background: var(--m-surface);
+  color: var(--m-ink);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Primary CTA */
+.cta {
+  background: linear-gradient(180deg, var(--m-gold-light) 0%, var(--m-gold) 100%);
+  color: var(--m-gold-ink);
+}
+
+/* Section label */
+.label {
+  font-size: 13px;
+  font-weight: 600;
   color: var(--m-muted-2);
+  letter-spacing: 0.02em;
 }
 
 .tnum {
@@ -233,20 +260,27 @@ body {
   font-feature-settings: "tnum";
 }
 
-/* Every interactive control is at least 44px tall */
+/* Every interactive control clears 44px */
 .tap {
   min-height: 44px;
   min-width: 44px;
 }
 
+/* Progress track */
+.track {
+  background: var(--m-track);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
 /* ------------------------------------------------------------------ */
-/*  Motion                                                             */
+/*  Motion — restrained, never bouncy                                  */
 /* ------------------------------------------------------------------ */
 
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -254,20 +288,7 @@ body {
   }
 }
 .rise {
-  animation: rise 0.5s var(--ease-inst) both;
-}
-
-@keyframes globe-turn {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-.globe-turn {
-  animation: globe-turn 240s linear infinite;
-  transform-origin: center;
+  animation: rise 0.35s var(--ease) both;
 }
 
 @keyframes shimmer {
@@ -281,12 +302,12 @@ body {
 .shimmer {
   background: linear-gradient(90deg, var(--m-shimmer-a) 0%, var(--m-shimmer-b) 40%, var(--m-shimmer-a) 80%);
   background-size: 800px 100%;
-  animation: shimmer 2.2s linear infinite;
+  animation: shimmer 1.8s linear infinite;
 }
 
 @keyframes sheen {
   0%,
-  60% {
+  62% {
     transform: translateX(-130%) skewX(-18deg);
   }
   100% {
@@ -298,14 +319,13 @@ body {
   position: absolute;
   inset: 0;
   width: 45%;
-  background: linear-gradient(100deg, transparent, rgba(255, 233, 163, 0.12), transparent);
-  animation: sheen 9s var(--ease-inst) infinite;
+  background: linear-gradient(100deg, transparent, rgba(255, 233, 163, 0.11), transparent);
+  animation: sheen 9s var(--ease) infinite;
   pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .rise,
-  .globe-turn,
   .shimmer,
   .card-sheen::after {
     animation: none !important;
@@ -313,7 +333,7 @@ body {
 }
 
 select option {
-  background-color: var(--m-canvas);
+  background-color: var(--m-surface);
   color: var(--m-ink);
 }
 
