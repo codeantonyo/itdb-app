@@ -1,34 +1,42 @@
 import { NextResponse } from "next/server";
 import {
-  ITDBONE_LADDER,
   ITDBONE_TIERS,
   ITDBONE_TOKEN,
   itdboneRange,
+  itdboneReachable,
   itdboneTierFor,
   marketUrl,
   nextItdboneTier,
   type ItdboneTier,
 } from "@/lib/itdb/config";
 import { computeYield, programInputs, type YieldComputed } from "@/lib/server/accrual";
+import { milestonesFor, type Milestone } from "@/lib/itdb/milestones";
+import { earlyBirdMultiplier } from "@/lib/itdb/early-birds";
 import { getDb } from "@/lib/server/db";
 import { getFx } from "@/lib/server/fx";
 import { sessionAccountId } from "@/lib/server/session";
 
-export type LadderTier = ItdboneTier & { rangeMin: number; rangeMax: number | null };
+export type LadderTier = ItdboneTier & {
+  rangeMin: number;
+  rangeMax: number | null;
+  /** False when a higher tier's threshold undercuts this one */
+  reachable: boolean;
+};
 
 export interface ItdboneSummary {
   token: { code: string; issuer: string };
   marketUrl: string;
-  ladder: typeof ITDBONE_LADDER;
   tier: LadderTier | null;
   next: (LadderTier & { needed: number }) | null;
   yield: YieldComputed;
+  /** Every milestone for THIS token only */
+  milestones: Milestone[];
   tiers: LadderTier[];
 }
 
 const withRange = (t: ItdboneTier): LadderTier => {
   const r = itdboneRange(t);
-  return { ...t, rangeMin: r.min, rangeMax: r.max };
+  return { ...t, rangeMin: r.min, rangeMax: r.max, reachable: itdboneReachable(t) };
 };
 
 /** GET /api/itdbone — the member's stablecoin tier, perks and daily yield. */
@@ -56,12 +64,12 @@ export async function GET(req: Request) {
   const summary: ItdboneSummary = {
     token: ITDBONE_TOKEN,
     marketUrl: marketUrl(ITDBONE_TOKEN),
-    ladder: ITDBONE_LADDER,
     tier: tier ? withRange(tier) : null,
     next: nxt
       ? { ...withRange(nxt), needed: Math.max(itdboneRange(nxt).min - inputs.balance, 0) }
       : null,
-    yield: computeYield("itdbone", inputs.balance, inputs.since, db.itdbone[id], fx),
+    milestones: milestonesFor("ITDBONE"),
+    yield: computeYield("itdbone", inputs.balance, inputs.since, db.itdbone[id], fx, earlyBirdMultiplier(account.wallets)),
     tiers: ITDBONE_TIERS.map(withRange),
   };
   return NextResponse.json(summary);

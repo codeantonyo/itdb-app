@@ -9,6 +9,7 @@ import { SectionHeader } from "@/components/shared/section-header";
 import { SimulatedNotice, SourceBadge } from "@/components/shared/simulated-notice";
 import { TierProgress } from "@/components/shared/tier-progress";
 import { TokenHeader } from "@/components/tokens/token-header";
+import { EarlyBirdBanner, MilestoneList, MultiplierBanner } from "@/components/tokens/milestones";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePortfolio } from "@/lib/client/portfolio";
 import { useJson } from "@/lib/client/use-json";
@@ -37,11 +38,23 @@ export default function ItdbPage() {
           balance={s.balance}
           unit="ITDB"
           currentTier={s.tier?.tier ?? null}
-          rows={s.tiers.map((t) => ({ tier: t.tier, min: t.min, max: t.max, range: rangeLabel(t.min, t.max), value: `${t.multiplier}× basket`, detail: `~${formatCurrency(t.indicativeUsd)}` }))}
+          rows={s.tiers.map((t) => ({ tier: t.tier, min: t.min, max: t.max, range: rangeLabel(t.min, t.max), value: `${t.multiplier}× basket`, detail: `~${formatCurrency(t.indicativeUsd)} per ITDB` }))}
         />
       ) : summary.loading ? (
         <Skeleton className="h-[170px] rounded-[20px]" />
       ) : null}
+
+      {s?.earlyBird && <EarlyBirdBanner multiplier={s.earlyBird.multiplier} />}
+
+      {s && (
+        <>
+          <MultiplierBanner token="ITDB" multiplier={s.milestone} scales="reserve basket" />
+          <section className="flex flex-col gap-3">
+            <SectionHeader title="ITDB milestones" />
+            <MilestoneList milestones={s.milestones} />
+          </section>
+        </>
+      )}
 
       <section className="flex flex-col gap-3">
         <SectionHeader title="Reserve basket" note="at live rates" />
@@ -56,7 +69,7 @@ export default function ItdbPage() {
                 <p className="tnum text-right text-[12px] leading-tight text-muted-2">
                   Indicative
                   <br />
-                  {formatCurrency(s.tier.indicativeUsd)}
+                  {formatCurrency(s.indicativeUsd)}
                 </p>
               )}
             </div>
@@ -75,7 +88,17 @@ export default function ItdbPage() {
                       </span>
                     }
                     value={<ExactFigure compact={formatCurrency(line.valueUsd)} exact={formatExactCurrency(line.valueUsd)} />}
-                    sub={<ExactFigure compact={`${formatAmount(line.units, 0)} ${line.ticker ?? "USD basket"}`} exact={`${formatExactAmount(line.units, 0)} ${line.ticker ?? "USD basket"}`} />}
+                    sub={
+                      <span className="flex items-center gap-1.5">
+                        <ExactFigure compact={`${formatAmount(line.units, 0)} ${line.ticker ?? "USD basket"}`} exact={`${formatExactAmount(line.units, 0)} ${line.ticker ?? "USD basket"}`} />
+                        {line.units > line.baseUnits && (
+                          <span className="tnum text-[12px] text-gold">
+                            {formatAmount(line.baseUnits, 0)} ×{formatAmount(s.milestone.value, 0)}
+                            {s.earlyBird ? ` ×${formatAmount(s.earlyBird.multiplier, 0)}` : ""}
+                          </span>
+                        )}
+                      </span>
+                    }
                     mark={<SourceBadge source={line.source} />}
                   />
                 ))}

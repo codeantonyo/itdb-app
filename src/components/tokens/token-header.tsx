@@ -15,6 +15,13 @@ interface TokenHeaderProps {
   marketUrl: string;
   loading: boolean;
   tierLabel?: string | null;
+  /**
+   * Value the token is presented at when it is not its DEX quote — QRS
+   * is referenced to 100 g of gold. The market price is still shown
+   * underneath: a member selling on the open market gets THAT price,
+   * and hiding it would misrepresent what they can realise.
+   */
+  priceOverride?: { usd: number; label: string; marketLabel: string } | null;
 }
 
 /**
@@ -22,11 +29,14 @@ interface TokenHeaderProps {
  * issuer's stellar.toml, DEX price with a change chip, the member's
  * holding and its value, and the LOBSTR trade button.
  */
-export function TokenHeader({ code, role, asset, marketUrl, loading, tierLabel }: TokenHeaderProps) {
-  const price = asset?.priceUsd ?? null;
+export function TokenHeader({ code, role, asset, marketUrl, loading, tierLabel, priceOverride }: TokenHeaderProps) {
+  const marketPrice = asset?.priceUsd ?? null;
+  const price = priceOverride?.usd ?? marketPrice;
   const change = asset?.change24h ?? null;
   const up = (change ?? 0) >= 0;
   const pending = loading && !asset;
+  const balance = asset?.balance ?? 0;
+  const valueUsd = priceOverride ? balance * priceOverride.usd : (asset?.valueUsd ?? 0);
 
   return (
     <section className="panel-navy engrave p-5">
@@ -51,13 +61,18 @@ export function TokenHeader({ code, role, asset, marketUrl, loading, tierLabel }
 
       <div className="mt-5 flex items-end justify-between gap-3">
         <div>
-          <p className="text-[12.5px] font-medium text-muted">Price</p>
+          <p className="text-[12.5px] font-medium text-muted">{priceOverride?.label ?? "Price"}</p>
           {pending ? (
             <Skeleton className="mt-1.5 h-8 w-28 opacity-40" />
           ) : price !== null ? (
             <p className="font-display mt-0.5 text-[30px] font-semibold leading-none text-primary">{formatPrice(price)}</p>
           ) : (
             <p className="mt-1 text-[15px] text-muted">{asset && !asset.resolved ? "Unavailable — network busy" : "No market yet"}</p>
+          )}
+          {priceOverride && !pending && (
+            <p className="tnum mt-1.5 text-[12.5px] text-muted-2">
+              {priceOverride.marketLabel} {marketPrice !== null ? formatPrice(marketPrice) : "—"}
+            </p>
           )}
         </div>
         {change !== null && (
@@ -75,8 +90,8 @@ export function TokenHeader({ code, role, asset, marketUrl, loading, tierLabel }
             <Skeleton className="mt-1.5 h-6 w-20 opacity-40" />
           ) : (
             <ExactFigure
-              compact={`${formatAmount(asset?.balance ?? 0, 2)} ${code}`}
-              exact={`${formatExactAmount(asset?.balance ?? 0, 7)} ${code}`}
+              compact={`${formatAmount(balance, 2)} ${code}`}
+              exact={`${formatExactAmount(balance, 7)} ${code}`}
               className="mt-0.5 block text-[17px] font-semibold text-primary"
               exactClassName="text-[13px]"
             />
@@ -88,8 +103,8 @@ export function TokenHeader({ code, role, asset, marketUrl, loading, tierLabel }
             <Skeleton className="mt-1.5 h-6 w-20 opacity-40" />
           ) : (
             <ExactFigure
-              compact={price !== null ? formatCurrency(asset?.valueUsd ?? 0) : "—"}
-              exact={price !== null ? formatExactCurrency(asset?.valueUsd ?? 0) : "—"}
+              compact={price !== null ? formatCurrency(valueUsd) : "—"}
+              exact={price !== null ? formatExactCurrency(valueUsd) : "—"}
               className="mt-0.5 block text-[17px] font-semibold text-primary"
               exactClassName="text-[13px]"
             />

@@ -10,6 +10,13 @@ import {
   nextItdbTier,
   type ItdbTier,
 } from "@/lib/itdb/config";
+import {
+  activeMultiplier,
+  milestonesFor,
+  type ActiveMultiplier,
+  type Milestone,
+} from "@/lib/itdb/milestones";
+import { earlyBirdMultiplier, earlyBirdWallets } from "@/lib/itdb/early-birds";
 import { getDb } from "@/lib/server/db";
 import { getFx, type PriceSource } from "@/lib/server/fx";
 import { memberHoldings, tokenBalance } from "@/lib/server/holdings";
@@ -21,8 +28,10 @@ export interface ItdbBasketLine {
   name: string;
   kind: "asset" | "fiat" | "usd";
   ticker: string | null;
-  /** Units at the member's tier (per-token entitlement × multiplier) */
+  /** Units at the member's tier, after the ITDB milestone multiplier */
   units: number;
+  /** Units before that multiplier */
+  baseUnits: number;
   usdPerUnit: number;
   valueUsd: number;
   source: PriceSource;
@@ -38,9 +47,17 @@ export interface ItdbSummary {
   basket: ItdbBasketLine[];
   basketUsd: number;
   indicativePerToken: number;
+  /** Indicative value of the member's whole basket, same formula as `basket` */
+  indicativeUsd: number;
   tiers: ItdbTier[];
   reserves: typeof ITDB_RESERVES;
   ratesAt: number;
+  /** ITDB's milestone multiplier and what would raise it next */
+  milestone: ActiveMultiplier;
+  /** The early-bird lifetime status, or null when not held */
+  earlyBird: { multiplier: number; wallets: string[] } | null;
+  /** Every ITDB milestone, for the ACTIVE / LOCKED list */
+  milestones: Milestone[];
 }
 
 /** GET /api/itdb — the member's ITDB tier and live-valued reserve basket. */
@@ -68,8 +85,19 @@ export async function GET(req: Request) {
 
   const tier = itdbTierFor(balance);
   const nxt = nextItdbTier(balance);
-  const basket: ItdbBasketLine[] = itdbBasket(balance).map(({ line, units }) => {
+
+  // ITDB's own milestone multiplier, and only ITDB's. Highest active
+  // value, never the sum of the milestones already passed.
+  const milestone = activeMultiplier("ITDB", "basket");
+
+  // The lifetime early-bird status is an ACCOUNT multiplier and stacks
+  // on top of the token milestone, per Tony's "applies to everything".
+  const ebWallets = earlyBirdWallets(account.wallets);
+  const accountMultiplier = earlyBirdMultiplier(account.wallets);
+
+  const basket: ItdbBasketLine[] = itdbBasket(balance).map(({ line, units: baseUnits }) => {
     const usdPerUnit = line.kind === "usd" ? 1 : fx.usdOf(line.ticker!);
+    const units = baseUnits * milestone.value * accountMultiplier;
     return {
       id: line.id,
       label: line.label,
@@ -77,6 +105,7 @@ export async function GET(req: Request) {
       kind: line.kind,
       ticker: line.ticker,
       units,
+      baseUnits,
       usdPerUnit,
       valueUsd: units * usdPerUnit,
       source: line.kind === "usd" ? "reference" : fx.sourceOf(line.ticker!),
@@ -93,9 +122,16 @@ export async function GET(req: Request) {
     basket,
     basketUsd: basket.reduce((s, l) => s + l.valueUsd, 0),
     indicativePerToken: ITDB_INDICATIVE_PER_TOKEN,
+    // (per-token indicative x balance x tier) x milestone — the same
+    // chain as `basket`, so the two are directly comparable.
+    indicativeUsd: (tier?.indicativeUsd ?? 0) * balance * milestone.value * accountMultiplier,
     tiers: ITDB_TIERS,
     reserves: ITDB_RESERVES,
     ratesAt: fx.at,
+    milestone,
+    milestones: milestonesFor("ITDB"),
+    earlyBird:
+      ebWallets.length > 0 ? { multiplier: accountMultiplier, wallets: ebWallets } : null,
   };
   return NextResponse.json(summary);
 }

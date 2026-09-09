@@ -16,14 +16,15 @@ import type { FxRates } from "./fx";
  * quietly — it throws instead of posting.
  */
 
-export type CreditSource = "itdbone" | "qrs" | "airdrop";
+export type CreditSource = "itdbone" | "qrs" | "airdrop" | "presale";
 
-export const CREDIT_SOURCES: CreditSource[] = ["itdbone", "qrs", "airdrop"];
+export const CREDIT_SOURCES: CreditSource[] = ["itdbone", "qrs", "airdrop", "presale"];
 
 export const CREDIT_SOURCE_LABELS: Record<CreditSource, string> = {
   itdbone: "ITDBONE yield",
   qrs: "QRS yield",
   airdrop: "Airdrop withdrawal",
+  presale: "Pre-sale refund",
 };
 
 function requireXlmValue(xlmValue: number, context: string): number {

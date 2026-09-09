@@ -10,6 +10,7 @@ import { TierProgress } from "@/components/shared/tier-progress";
 import { CollectPanel, type CollectOutcome } from "@/components/tokens/collect-panel";
 import { TokenHeader } from "@/components/tokens/token-header";
 import { YieldCard } from "@/components/tokens/yield-card";
+import { MilestoneList, MultiplierBanner } from "@/components/tokens/milestones";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/client/auth";
 import { useCards } from "@/lib/client/cards";
@@ -81,12 +82,23 @@ export default function ItdbonePage() {
 
       {s ? (
         <TierProgress
+          note="50% off all tiers — active"
           balance={s.yield.balance}
           unit="ITDBONE"
           currentTier={s.tier?.tier ?? null}
-          rows={s.tiers.map((t) => ({ tier: t.tier, min: t.rangeMin, max: t.rangeMax, range: rangeLabel(t.rangeMin, t.rangeMax), value: `${formatCurrency(t.dailyUsd)} / day`, detail: `${formatAmount(t.apyPct, 0)}% APY · ${t.cashbackPct}% back` }))}
+          rows={s.tiers.map((t) => ({ tier: t.tier, min: t.rangeMin, max: t.rangeMax, range: rangeLabel(t.rangeMin, t.rangeMax), reachable: t.reachable, value: `${formatCurrency(t.dailyUsd)} / day`, detail: `${formatAmount(t.apyPct, 0)}% APY · ${t.cashbackPct}% back` }))}
         />
       ) : null}
+
+      {s && (
+        <>
+          <MultiplierBanner token="ITDBONE" multiplier={s.yield.milestone} scales="daily allowance" />
+          <section className="flex flex-col gap-3">
+            <SectionHeader title="ITDBONE milestones" />
+            <MilestoneList milestones={s.milestones} />
+          </section>
+        </>
+      )}
 
       {s?.tier && (
         <section className="flex flex-col gap-3">

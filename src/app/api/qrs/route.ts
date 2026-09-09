@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import {
-  QRS_GOLD_BASIS,
   QRS_GRAMS_PER_TOKEN,
   QRS_METAL_LABEL,
   QRS_TIERS,
@@ -9,14 +8,18 @@ import {
   QRS_TOTAL_SUPPLY,
   marketUrl,
   nextQrsTier,
+  qrsGoldBackingUsd,
   qrsGoldKg,
   qrsTierFor,
   type QrsMetal,
   type QrsTier,
 } from "@/lib/itdb/config";
 import { computeYield, programInputs, type YieldComputed } from "@/lib/server/accrual";
+import { milestonesFor, type Milestone } from "@/lib/itdb/milestones";
+import { earlyBirdMultiplier } from "@/lib/itdb/early-birds";
 import { getDb } from "@/lib/server/db";
 import { getFx, type PriceSource } from "@/lib/server/fx";
+import { presaleView, type PresaleBonusView } from "@/lib/server/presale";
 import { sessionAccountId } from "@/lib/server/session";
 
 export interface MetalPosition {
@@ -35,12 +38,55 @@ export interface QrsSummary {
   tier: QrsTier | null;
   next: (QrsTier & { needed: number }) | null;
   yield: YieldComputed;
-  /** Gold reference under the active basis (see config TODO) */
-  gold: MetalPosition & { basis: typeof QRS_GOLD_BASIS; tierTableKg: number; gramsPerToken: number };
+  /** Every milestone for THIS token only */
+  milestones: Milestone[];
+  /** Pre-sale early-bird bonuses; null when this member did not buy */
+  presale: PresaleBonusView | null;
+  /** Gold reference: 100 g per QRS, the single backing ratio */
+  gold: MetalPosition & { gramsPerToken: number };
+  /**
+   * What 1 QRS is worth as gold — the live price of 100 g. This is the
+   * value QRS is presented at; the DEX quote reaches the client through
+   * the portfolio and is shown beside it.
+   */
+  backingUsd: number;
   metals: MetalPosition[];
   reservesUsd: number;
   backing: { totalKg: number; totalSupply: number; gramsPerToken: number };
   tiers: QrsTier[];
+}
+
+const amount = (n: number, unit: string, digits = 2) =>
+  `${n.toLocaleString("en-US", { maximumFractionDigits: digits })} ${unit}`;
+
+/**
+ * The two pre-sale bonuses as milestones, with this member's exact
+ * figures. Returns nothing at all for a wallet outside the allowlist.
+ */
+function presaleMilestones(p: PresaleBonusView | null): Milestone[] {
+  if (!p) return [];
+  return [
+    {
+      id: "qrs-presale-refund",
+      token: "QRS",
+      title: `${p.refundPct}% Refund (XLM)`,
+      detail: p.paid
+        ? `Paid onto your card as ${amount(p.paid.credited, p.paid.currency)}.`
+        : `${p.refundPct}% of the ${amount(p.xlmSpent, "XLM")} you committed in the pre-sale, ready to take onto a card.`,
+      status: "active",
+      restricted: true,
+      amount: amount(p.refundXlm, "XLM", 4),
+    },
+    {
+      id: "qrs-presale-x2",
+      token: "QRS",
+      title: "×2 Tokens Drop (QRS)",
+      detail: `Double the ${amount(p.qrsPurchased, "QRS", 0)} you bought in the pre-sale.`,
+      status: "active",
+      restricted: true,
+      amount: amount(p.bonusQrs, "QRS", 0),
+    },
+  ];
 }
 
 /** GET /api/qrs — the member's QRS tier, daily yield and metal reference positions. */
@@ -63,10 +109,15 @@ export async function GET(req: Request) {
     );
   }
 
+  // Eligibility is the allowlist, nothing else — a member who did not
+  // buy in the pre-sale never sees these two bonuses.
+  const presale = presaleView(account, db.presaleRefunds[id], fx);
+
   const tier = qrsTierFor(inputs.balance);
   const nxt = nextQrsTier(inputs.balance);
 
-  const goldKg = tier ? qrsGoldKg(inputs.balance, tier) : 0;
+  // Gold follows the holding, not the tier: 100 g per QRS, always.
+  const goldKg = qrsGoldKg(inputs.balance);
   const gold = {
     metal: "gold" as const,
     label: QRS_METAL_LABEL.gold,
@@ -74,8 +125,6 @@ export async function GET(req: Request) {
     usdPerKg: fx.metalUsdPerKg("gold"),
     valueUsd: goldKg * fx.metalUsdPerKg("gold"),
     source: fx.metalSourceOf("gold"),
-    basis: QRS_GOLD_BASIS,
-    tierTableKg: tier?.goldKg ?? 0,
     gramsPerToken: QRS_GRAMS_PER_TOKEN,
   };
   const metals: MetalPosition[] = (
@@ -95,7 +144,10 @@ export async function GET(req: Request) {
     balance: inputs.balance,
     tier,
     next: nxt ? { ...nxt, needed: Math.max(nxt.min - inputs.balance, 0) } : null,
-    yield: computeYield("qrs", inputs.balance, inputs.since, db.qrs[id], fx),
+    milestones: [...presaleMilestones(presale), ...milestonesFor("QRS")],
+    presale,
+    backingUsd: qrsGoldBackingUsd(fx.metalUsdPerKg("gold")),
+    yield: computeYield("qrs", inputs.balance, inputs.since, db.qrs[id], fx, earlyBirdMultiplier(account.wallets)),
     gold,
     metals,
     reservesUsd: gold.valueUsd + metals.reduce((s, m) => s + m.valueUsd, 0),

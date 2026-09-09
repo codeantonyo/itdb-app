@@ -10,6 +10,8 @@ import {
   itdboneTierFor,
   qrsTierFor,
 } from "@/lib/itdb/config";
+import { earlyBirdMultiplier } from "@/lib/itdb/early-birds";
+import { activeMultiplier, type ActiveMultiplier, type TokenCode } from "@/lib/itdb/milestones";
 import { firstAcquired } from "@/lib/stellar/acquired";
 import type { RegistryToken } from "@/lib/stellar/registry";
 import { mutateDb, type DbAccount, type YieldRecord } from "./db";
@@ -32,6 +34,9 @@ import { creditAccount, creditCard, type CreditSource } from "./ledger";
  */
 
 export type Program = "itdbone" | "qrs";
+
+/** Each programme's token, so a multiplier can never cross tokens. */
+const TOKEN_OF: Record<Program, TokenCode> = { itdbone: "ITDBONE", qrs: "QRS" };
 
 interface ProgramDef {
   token: RegistryToken;
@@ -80,7 +85,10 @@ const PROGRAMS: Record<Program, ProgramDef> = {
 
 export interface YieldLine {
   code: string;
+  /** Rate actually used, after the token's active milestone multiplier */
   perDay: number;
+  /** Rate before that multiplier, so the boost can be shown honestly */
+  basePerDay: number;
   /** Units accrued since the anchor */
   accrued: number;
   usdPerUnit: number;
@@ -105,6 +113,10 @@ export interface YieldComputed {
   lastCollectedAt: number;
   cooldownRemainingMs: number;
   minCollectUsd: number;
+  /** The milestone multiplier in force for THIS token, never another's */
+  milestone: ActiveMultiplier;
+  /** Account-wide lifetime multiplier (early bird = 10, otherwise 1) */
+  accountMultiplier: number;
 }
 
 /**
@@ -117,6 +129,8 @@ export function computeYield(
   since: number | null,
   record: YieldRecord | undefined,
   fx: FxRates,
+  /** x10 for an early-bird account; applied on top of the milestone */
+  accountMultiplier = 1,
   now = Date.now(),
 ): YieldComputed {
   const def = PROGRAMS[program];
@@ -125,12 +139,18 @@ export function computeYield(
   const from = Math.max(since ?? 0, lastCollectedAt);
   const daysAccrued = ladder && from > 0 ? Math.max(0, (now - from) / DAY_MS) : 0;
 
+  // The multiplier is read for THIS token only, and is the highest
+  // active one rather than the sum of every milestone passed.
+  const milestone = activeMultiplier(TOKEN_OF[program], "daily");
+
   const lines: YieldLine[] = (ladder?.lines ?? []).map((l) => {
     const usdPerUnit = fx.usdOf(l.code);
-    const accrued = l.perDay * daysAccrued;
+    const perDay = l.perDay * milestone.value * accountMultiplier;
+    const accrued = perDay * daysAccrued;
     return {
       code: l.code,
-      perDay: l.perDay,
+      perDay,
+      basePerDay: l.perDay,
       accrued,
       usdPerUnit,
       usd: accrued * usdPerUnit,
@@ -160,6 +180,8 @@ export function computeYield(
     lastCollectedAt,
     cooldownRemainingMs,
     minCollectUsd: MIN_COLLECT_USD,
+    milestone,
+    accountMultiplier,
   };
 }
 
@@ -225,7 +247,14 @@ export async function collectYield(
     const table = db[program];
     // A fresh record starts at collectedAt 0 — NEVER now (§6.2).
     const rec = (table[account.id] ??= { collectedAt: 0, collectedUsd: 0, claims: [] });
-    const computed = computeYield(program, inputs.balance, inputs.since, rec, fx);
+    const computed = computeYield(
+      program,
+      inputs.balance,
+      inputs.since,
+      rec,
+      fx,
+      earlyBirdMultiplier(account.wallets),
+    );
     if (!computed.tier) {
       return {
         ok: false as const,

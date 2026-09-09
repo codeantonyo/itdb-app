@@ -1,10 +1,11 @@
 /**
- * ITDB / ITDBONE / QRS — tier data, transcribed once from Tony's spec
- * (tiers.draft.ts in the project root).
+ * ITDB / ITDBONE / QRS — tier data.
  *
- * Two things are unresolved and marked TODO(tony) below — see §8 of
- * ITDB-BRIEF.md. Each has a one-line switch so the app ships now and
- * flips the moment he confirms.
+ * The ITDBONE hold ranges were the blocking question in §8.1 of the
+ * brief; the reward-engine spec settles them and they are now stated
+ * once, below. The QRS gold basis (§8.2) is still open: the spec gives
+ * BOTH "100 grams per QRS" and a tier table worth exactly twice that,
+ * so the one-line switch stays.
  *
  * Every basket here is a SIMULATED position held against the member's
  * account, priced at live rates — the same model NEWBANK uses for
@@ -75,7 +76,7 @@ export interface ItdbTier {
   min: number;
   max: number | null;
   multiplier: number;
-  /** Indicative basket total at this tier, display only */
+  /** Indicative basket value per 1 ITDB held at this tier, display only */
   indicativeUsd: number;
 }
 
@@ -96,13 +97,6 @@ export const ITDB_TIERS: ItdbTier[] = [
 /*  ITDBONE — the bank stablecoin                                      */
 /* ------------------------------------------------------------------ */
 
-/**
- * TODO(tony): Tony's spec lists TWO hold ranges per tier. "primary" uses
- * the FIRST (higher) set, "alt" the second. Flip this one constant once
- * he confirms which ladder is authoritative — nothing else changes.
- */
-export const ITDBONE_LADDER: "primary" | "alt" = "primary";
-
 export type MetalsPerk = "quarterly-gs" | "quarterly-gsp" | "monthly-gsp";
 
 export const METALS_PERK_LABEL: Record<MetalsPerk, string> = {
@@ -113,10 +107,8 @@ export const METALS_PERK_LABEL: Record<MetalsPerk, string> = {
 
 export interface ItdboneTier {
   tier: number;
+  /** Entry threshold. The tier's upper bound is derived — see itdboneRange. */
   min: number;
-  max: number | null;
-  altMin: number;
-  altMax: number | null;
   /** Daily currency allowance, USD */
   dailyUsd: number;
   dailyXlm: number;
@@ -134,42 +126,93 @@ export interface ItdboneTier {
   lifetimeRewards: boolean;
 }
 
+/**
+ * Perks are derived from the tier number rather than set per row, so a
+ * threshold can only ever be stated once. Thresholds are the ones in
+ * the reward-engine spec: gold access from 3, priority withdrawals
+ * from 4, VIP support from 5, private banking from 7, founder status
+ * from 8, lifetime rewards at 10.
+ */
+const metalsAt = (tier: number): MetalsPerk | null =>
+  tier >= 8 ? "monthly-gsp" : tier >= 6 ? "quarterly-gsp" : tier >= 4 ? "quarterly-gs" : null;
+
 const one = (
-  tier: number, min: number, max: number | null, altMin: number, altMax: number | null,
-  dailyUsd: number, daily: number, apyPct: number, cashbackPct: number,
-  extra: Partial<ItdboneTier> = {},
+  tier: number,
+  min: number,
+  dailyUsd: number,
+  daily: number,
+  apyPct: number,
+  cashbackPct: number,
 ): ItdboneTier => ({
-  tier, min, max, altMin, altMax,
-  dailyUsd, dailyXlm: daily, dailyXrp: daily, dailyXdc: daily,
-  apyPct, cashbackPct,
-  goldAccess: true,
-  priorityWithdrawals: false,
-  metals: null,
-  vipSupport: false,
-  privateBanking: false,
-  founderStatus: false,
-  lifetimeRewards: false,
-  ...extra,
+  tier,
+  min,
+  dailyUsd,
+  dailyXlm: daily,
+  dailyXrp: daily,
+  dailyXdc: daily,
+  apyPct,
+  cashbackPct,
+  goldAccess: tier >= 3,
+  priorityWithdrawals: tier >= 4,
+  vipSupport: tier >= 5,
+  privateBanking: tier >= 7,
+  founderStatus: tier >= 8,
+  lifetimeRewards: tier >= 10,
+  metals: metalsAt(tier),
 });
 
+/**
+ * The authoritative ladder — entry thresholds ONLY.
+ *
+ * These are the "50% OFF ALL TIERS" figures Tony announced on
+ * 2026-09-07, taken verbatim from the marketing post, including Tier 7
+ * at 25,000 (he confirmed to use exactly what the post shows even
+ * though every other tier is exactly half its old threshold and half of
+ * 250,000 would be 125,000). The discount is permanent and the rewards
+ * per tier are unchanged; only the entry bar moved.
+ *
+ * CONSEQUENCE OF TIER 7 AT 25,000: a member is put in the highest tier
+ * whose threshold they clear, so anyone from 25,000 upward clears Tier
+ * 7 and Tiers 5 and 6 can no longer be reached by anybody. Nothing is
+ * hidden — `itdboneRange` derives each tier's real span from the
+ * thresholds, so an unreachable tier reports itself as such rather than
+ * displaying a range it would never assign. Setting Tier 7 back to
+ * 125_000 restores Tiers 5 and 6 with no other change.
+ *
+ * No `max` is stored: a second column can disagree with the thresholds,
+ * and that is exactly the kind of drift that produces a wrong tier.
+ */
 export const ITDBONE_TIERS: ItdboneTier[] = [
-  one(1,     1_000,     5_000,     500,     2_500,       250_000,     2_500_000,    100, 40),
-  one(2,     5_001,    10_000,   2_501,     5_000,       500_000,     5_000_000,    200, 45),
-  one(3,    10_001,    25_000,   5_001,    12_500,     1_000_000,    10_000_000,    400, 50, { priorityWithdrawals: true }),
-  one(4,    25_001,    50_000,  12_501,    25_000,     2_500_000,    25_000_000,    600, 55, { priorityWithdrawals: true, metals: "quarterly-gs" }),
-  one(5,    50_001,   100_000,  25_001,    50_000,     5_000_000,    50_000_000,  1_000, 60, { priorityWithdrawals: true, metals: "quarterly-gs", vipSupport: true }),
-  one(6,   100_001,   250_000,  50_001,   125_000,    10_000_000,   100_000_000,  1_500, 65, { priorityWithdrawals: true, metals: "quarterly-gsp", vipSupport: true }),
-  one(7,   250_001,   500_000, 125_001,   250_000,    25_000_000,   250_000_000,  2_500, 70, { priorityWithdrawals: true, metals: "quarterly-gsp", vipSupport: true, privateBanking: true }),
-  one(8,   500_001, 1_000_000, 250_001,   500_000,    50_000_000,   500_000_000,  4_000, 75, { priorityWithdrawals: true, metals: "monthly-gsp", vipSupport: true, privateBanking: true, founderStatus: true }),
-  one(9, 1_000_001, 5_000_000, 500_001, 2_500_000,   100_000_000, 1_000_000_000,  6_000, 80, { priorityWithdrawals: true, metals: "monthly-gsp", vipSupport: true, privateBanking: true, founderStatus: true }),
-  one(10, 5_000_001,     null, 2_500_001,     null,   250_000_000, 2_500_000_000, 10_000, 90, { priorityWithdrawals: true, metals: "monthly-gsp", vipSupport: true, privateBanking: true, founderStatus: true, lifetimeRewards: true }),
+  one(1,        500,     250_000,     2_500_000,    100, 40),
+  one(2,      2_500,     500_000,     5_000_000,    200, 45),
+  one(3,      5_000,   1_000_000,    10_000_000,    400, 50),
+  one(4,     12_500,   2_500_000,    25_000_000,    600, 55),
+  one(5,     25_000,   5_000_000,    50_000_000,  1_000, 60),
+  one(6,     50_000,  10_000_000,   100_000_000,  1_500, 65),
+  one(7,     25_000,  25_000_000,   250_000_000,  2_500, 70),
+  one(8,    250_000,  50_000_000,   500_000_000,  4_000, 75),
+  one(9,    500_000, 100_000_000, 1_000_000_000,  6_000, 80),
+  one(10, 2_500_000, 250_000_000, 2_500_000_000, 10_000, 90),
 ];
 
-/** The hold range in force for a tier under the active ladder. */
+/**
+ * A tier's real span, derived from the thresholds rather than stored.
+ *
+ * Assignment puts a member in the highest-numbered tier whose threshold
+ * they clear, so tier i holds balances from its own threshold up to
+ * just below the LOWEST threshold of any tier above it. When a higher
+ * tier undercuts this one, `max` comes out below `min` and the tier is
+ * unreachable — see `itdboneReachable`.
+ */
 export function itdboneRange(t: ItdboneTier): { min: number; max: number | null } {
-  return ITDBONE_LADDER === "alt"
-    ? { min: t.altMin, max: t.altMax }
-    : { min: t.min, max: t.max };
+  const above = ITDBONE_TIERS.filter((x) => x.tier > t.tier).map((x) => x.min);
+  return { min: t.min, max: above.length > 0 ? Math.min(...above) - 1 : null };
+}
+
+/** False when a higher tier's threshold sits at or below this one's. */
+export function itdboneReachable(t: ItdboneTier): boolean {
+  const { min, max } = itdboneRange(t);
+  return max === null || max >= min;
 }
 
 /* ------------------------------------------------------------------ */
@@ -177,16 +220,17 @@ export function itdboneRange(t: ItdboneTier): { min: number; max: number | null 
 /* ------------------------------------------------------------------ */
 
 /**
- * Stated backing rule: 10,000,000 kg over 100,000,000 tokens
- * = 100 g per QRS.
+ * QRS gold backing — SETTLED 2026-09-06 by Tony. One QRS is referenced
+ * to 100 g of gold, so 10,000 QRS = 1 tonne and the whole 100,000,000
+ * supply stands against 10,000 t. The tier table no longer carries a
+ * gold column of its own: every gold figure in the app derives from
+ * this one ratio, so the two can never drift apart again.
  *
- * TODO(tony): the tier table below grants exactly 2x that rule at every
- * tier (Tier 1 gives 2,000 kg for 10,000 QRS = 200 g/token). Until he
- * confirms which governs, the app shows the CONSERVATIVE per-token rule
- * as the member's gold reference and keeps the tier figure alongside.
- * Flip `QRS_GOLD_BASIS` to "tier-table" to reverse that.
+ * QRS is therefore valued at the live gold price of 100 g rather than
+ * at its DEX quote (`qrsGoldBackingUsd`). The DEX quote stays visible
+ * beside it — a member who sells on the open market gets that price,
+ * and hiding it would misrepresent what they can actually realise.
  */
-export const QRS_GOLD_BASIS: "per-token" | "tier-table" = "per-token";
 export const QRS_GRAMS_PER_TOKEN = 100;
 export const QRS_TOTAL_KG = 10_000_000;
 export const QRS_TOTAL_SUPPLY = 100_000_000;
@@ -215,7 +259,6 @@ export interface QrsTier {
   dailyUsd: number;
   /** Daily crypto yield by ticker; absent = not granted at this tier */
   daily: Partial<Record<QrsCrypto, number>>;
-  goldKg: number;
   /** Precious-metal reserve positions, kg by metal */
   metalsKg: Partial<Record<QrsMetal, number>>;
 }
@@ -224,52 +267,52 @@ export const QRS_TIERS: QrsTier[] = [
   { tier: 1, min: 10_000, max: 24_999,
     dailyUsd: 500_000,
     daily: { XLM: 50_000_000, XRP: 5_000_000 },
-    goldKg: 2_000, metalsKg: { platinum: 100 } },
+    metalsKg: { platinum: 100 } },
 
   { tier: 2, min: 25_000, max: 49_999,
     dailyUsd: 2_000_000,
     daily: { XLM: 200_000_000, XRP: 20_000_000, XDC: 10_000_000 },
-    goldKg: 4_000, metalsKg: { platinum: 250 } },
+    metalsKg: { platinum: 250 } },
 
   { tier: 3, min: 50_000, max: 99_999,
     dailyUsd: 10_000_000,
     daily: { XLM: 1_000_000_000, XRP: 100_000_000, XDC: 50_000_000, QNT: 20_000_000 },
-    goldKg: 10_000, metalsKg: { platinum: 1_000 } },
+    metalsKg: { platinum: 1_000 } },
 
   { tier: 4, min: 100_000, max: 249_999,
     dailyUsd: 50_000_000,
     daily: { XLM: 5_000_000_000, XRP: 500_000_000, XDC: 200_000_000, QNT: 100_000_000, HBAR: 50_000_000 },
-    goldKg: 20_000, metalsKg: { palladium: 5_000, rhodium: 2_000 } },
+    metalsKg: { palladium: 5_000, rhodium: 2_000 } },
 
   { tier: 5, min: 250_000, max: 499_999,
     dailyUsd: 200_000_000,
     daily: { XLM: 20_000_000_000, XRP: 5_000_000_000, XDC: 2_000_000_000, QNT: 1_000_000_000, HBAR: 500_000_000, ADA: 250_000_000 },
-    goldKg: 50_000, metalsKg: { silver: 15_000, iridium: 6_000 } },
+    metalsKg: { silver: 15_000, iridium: 6_000 } },
 
   { tier: 6, min: 500_000, max: 999_999,
     dailyUsd: 1_000_000_000,
     daily: { XLM: 100_000_000_000, XRP: 50_000_000_000, XDC: 20_000_000_000, QNT: 10_000_000_000, HBAR: 5_000_000_000, ADA: 2_500_000_000, SOL: 1_000_000_000 },
-    goldKg: 100_000, metalsKg: { silver: 50_000, rhodium: 20_000, osmium: 10_000 } },
+    metalsKg: { silver: 50_000, rhodium: 20_000, osmium: 10_000 } },
 
   { tier: 7, min: 1_000_000, max: 2_499_999,
     dailyUsd: 5_000_000_000,
     daily: { XLM: 500_000_000_000, XRP: 200_000_000_000, XDC: 100_000_000_000, QNT: 50_000_000_000, HBAR: 25_000_000_000, ADA: 10_000_000_000, SOL: 5_000_000_000, DOT: 2_500_000_000 },
-    goldKg: 250_000, metalsKg: { silver: 200_000, platinum: 100_000, iridium: 40_000 } },
+    metalsKg: { silver: 200_000, platinum: 100_000, iridium: 40_000 } },
 
   { tier: 8, min: 2_500_000, max: 4_999_999,
     dailyUsd: 20_000_000_000,
     daily: { XLM: 2_000_000_000_000, XRP: 1_000_000_000_000, XDC: 500_000_000_000, QNT: 200_000_000_000, HBAR: 100_000_000_000, ADA: 50_000_000_000, SOL: 20_000_000_000, DOT: 10_000_000_000 },
-    goldKg: 500_000, metalsKg: { silver: 1_000_000, platinum: 500_000, palladium: 200_000, rhodium: 100_000 } },
+    metalsKg: { silver: 1_000_000, platinum: 500_000, palladium: 200_000, rhodium: 100_000 } },
 
   { tier: 9, min: 5_000_000, max: 9_999_999,
     dailyUsd: 100_000_000_000,
     daily: { XLM: 10_000_000_000_000, XRP: 5_000_000_000_000, XDC: 2_000_000_000_000, QNT: 1_000_000_000_000, HBAR: 500_000_000_000, ADA: 200_000_000_000, SOL: 100_000_000_000, DOT: 50_000_000_000, MATIC: 20_000_000_000 },
-    goldKg: 1_000_000, metalsKg: { silver: 5_000_000, platinum: 2_000_000, palladium: 1_000_000, rhodium: 500_000, tungsten: 200_000 } },
+    metalsKg: { silver: 5_000_000, platinum: 2_000_000, palladium: 1_000_000, rhodium: 500_000, tungsten: 200_000 } },
 
   { tier: 10, min: 10_000_000, max: null,
     dailyUsd: 500_000_000_000,
     daily: { XLM: 50_000_000_000_000, XRP: 20_000_000_000_000, XDC: 10_000_000_000_000, QNT: 5_000_000_000_000, HBAR: 2_500_000_000_000, ADA: 1_000_000_000_000, SOL: 500_000_000_000, DOT: 200_000_000_000, MATIC: 100_000_000_000, LINK: 50_000_000_000 },
-    goldKg: 2_000_000, metalsKg: { silver: 20_000_000, platinum: 10_000_000, palladium: 5_000_000, rhodium: 2_000_000, iridium: 1_000_000, tungsten: 500_000 } },
+    metalsKg: { silver: 20_000_000, platinum: 10_000_000, palladium: 5_000_000, rhodium: 2_000_000, iridium: 1_000_000, tungsten: 500_000 } },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -300,27 +343,57 @@ export function nextItdbTier(balance: number): ItdbTier | null {
   const n = (itdbTierFor(balance)?.tier ?? 0) + 1;
   return ITDB_TIERS.find((t) => t.tier === n) ?? null;
 }
+/**
+ * The tier a member would actually reach next: the lowest threshold
+ * above their balance among tiers that are reachable at all. Picking
+ * "current tier + 1" would point at an unreachable tier and promise a
+ * step up that buying more would not deliver.
+ */
 export function nextItdboneTier(balance: number): ItdboneTier | null {
-  const n = (itdboneTierFor(balance)?.tier ?? 0) + 1;
-  return ITDBONE_TIERS.find((t) => t.tier === n) ?? null;
+  return (
+    ITDBONE_TIERS.filter((t) => itdboneReachable(t) && t.min > balance).sort(
+      (a, b) => a.min - b.min,
+    )[0] ?? null
+  );
 }
 export function nextQrsTier(balance: number): QrsTier | null {
   const n = (qrsTierFor(balance)?.tier ?? 0) + 1;
   return QRS_TIERS.find((t) => t.tier === n) ?? null;
 }
 
-/** A member's ITDB basket: per-token entitlement x tier multiplier. */
+/**
+ * A member's ITDB basket, per the reward-engine formula:
+ *
+ *   units = (per-token entitlement x balance) x tier multiplier
+ *
+ * The milestone multiplier is applied on top of this by the caller, so
+ * the full rule is (Base x Tier) x Milestone. Tony confirmed 2026-09-06
+ * that the balance term belongs here and that the tier table's
+ * `indicativeUsd` is a PER-TOKEN reference, not the member's total.
+ */
 export function itdbBasket(balance: number): { line: ReserveLine; units: number }[] {
   const tier = itdbTierFor(balance);
   if (!tier) return [];
   return ITDB_RESERVES.map((line) => ({
     line,
-    units: line.perToken * tier.multiplier,
+    units: line.perToken * balance * tier.multiplier,
   }));
 }
 
-/** Gold reference for a QRS holding under the active basis (see TODO). */
-export function qrsGoldKg(balance: number, tier: QrsTier | null): number {
-  if (QRS_GOLD_BASIS === "tier-table") return tier?.goldKg ?? 0;
+/**
+ * Gold reference for a QRS holding: 1 QRS = 100 g, so 10,000 QRS = 1 t.
+ * This is the single ratio — there is no tier-table alternative.
+ */
+export function qrsGoldKg(balance: number): number {
   return (balance * QRS_GRAMS_PER_TOKEN) / 1000;
+}
+
+/** What a tier's entry holding is worth in gold, on the same ratio. */
+export function qrsTierGoldKg(tier: QrsTier): number {
+  return qrsGoldKg(tier.min);
+}
+
+/** USD backing of 1 QRS: the live price of 100 g of gold. */
+export function qrsGoldBackingUsd(goldUsdPerKg: number): number {
+  return (goldUsdPerKg * QRS_GRAMS_PER_TOKEN) / 1000;
 }

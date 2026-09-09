@@ -16,6 +16,7 @@ export const LEDGER_SOURCE_LABELS: Record<string, string> = {
   itdbone: "ITDBONE yield",
   qrs: "QRS yield",
   airdrop: "Airdrop withdrawal",
+  presale: "Pre-sale refund",
 };
 
 interface LedgerTxnLite {

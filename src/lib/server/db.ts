@@ -138,6 +138,26 @@ export interface AirdropRecord {
   withdrawnUsd: number;
 }
 
+/**
+ * A member's QRS pre-sale refund, written once when it is paid out.
+ * Its presence IS the "already paid" flag — there is no separate
+ * boolean to fall out of step with it.
+ */
+export interface PresaleRefundRecord {
+  paidAt: number;
+  /** Allowlisted wallets this was paid against */
+  wallets: string[];
+  /** XLM refunded (20% of pre-sale spend) */
+  xlm: number;
+  /** USD value of that XLM at payout time */
+  usd: number;
+  /** cardId the refund landed on */
+  destination: string;
+  /** Amount actually credited, in the card's own currency */
+  credited: number;
+  currency: string;
+}
+
 export type OtpPurpose = "signup" | "reset" | "change_email";
 
 export interface OtpRecord {
@@ -193,6 +213,8 @@ export interface DbShape {
   qrs: Record<string, YieldRecord>;
   /** Claimed airdrops, keyed by accountId */
   airdrops: Record<string, AirdropRecord>;
+  /** Paid QRS pre-sale refunds, keyed by accountId */
+  presaleRefunds: Record<string, PresaleRefundRecord>;
 }
 
 const DB_DIR = path.join(process.cwd(), "data");
@@ -237,6 +259,7 @@ const emptyDb = (): DbShape => ({
   itdbone: {},
   qrs: {},
   airdrops: {},
+  presaleRefunds: {},
 });
 
 const obj = <T>(v: unknown, fallback: T): T =>
@@ -265,6 +288,7 @@ function normalizeDb(db: Partial<DbShape>): DbShape {
     itdbone: obj(db.itdbone, {}),
     qrs: obj(db.qrs, {}),
     airdrops: obj(db.airdrops, {}),
+    presaleRefunds: obj(db.presaleRefunds, {}),
   };
 }
 
@@ -433,6 +457,8 @@ function splitDb(db: DbShape): Map<string, string> {
     out.set(`qrs:${id}`, JSON.stringify(y));
   for (const [id, a] of Object.entries(db.airdrops))
     out.set(`airdrop:${id}`, JSON.stringify(a));
+  for (const [id, r] of Object.entries(db.presaleRefunds))
+    out.set(`presale:${id}`, JSON.stringify(r));
   return out;
 }
 
@@ -462,6 +488,8 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
       db.qrs[shard.slice(4)] = value as YieldRecord;
     else if (shard.startsWith("airdrop:"))
       db.airdrops[shard.slice(8)] = value as AirdropRecord;
+    else if (shard.startsWith("presale:"))
+      db.presaleRefunds[shard.slice(8)] = value as PresaleRefundRecord;
   }
   db.accounts.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   return normalizeDb(db);
@@ -473,7 +501,7 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
  * deployment's shards survive a brief old/new instance overlap.
  */
 const OWNED_SHARD_RE =
-  /^(meta|otps|otpThrottle|loginThrottle|acquired)$|^(account|userstate|ledger|itdbone|qrs|airdrop):/;
+  /^(meta|otps|otpThrottle|loginThrottle|acquired)$|^(account|userstate|ledger|itdbone|qrs|airdrop|presale):/;
 
 function entryFromRow(row: {
   shard: string;

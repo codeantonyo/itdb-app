@@ -27,6 +27,19 @@ interface CollectPanelProps {
   cards: StoredCard[];
   ledgerCards: Record<string, LedgerCard>;
   onConfirm: (destination: string) => Promise<CollectOutcome>;
+  /**
+   * Wording and behaviour for a payout that is not daily yield — the
+   * pre-sale refund, which must land on a card rather than the account.
+   */
+  variant?: {
+    title: string;
+    heading: string;
+    intro: string;
+    /** Hide the ITDB-account option; the payout is card-only */
+    cardsOnly?: boolean;
+    /** Replaces the "Yield resumes" receipt line */
+    footnote?: { label: string; value: string };
+  };
 }
 
 /**
@@ -42,6 +55,7 @@ export function CollectPanel({
   cards,
   ledgerCards,
   onConfirm,
+  variant,
 }: CollectPanelProps) {
   const [picked, setPicked] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -53,7 +67,10 @@ export function CollectPanel({
     [cards, ledgerCards],
   );
   // Derived, so it stays valid if a card is frozen or closed underneath.
-  const destination = picked === "account" || usable.some((c) => c.id === picked) ? picked! : "account";
+  const fallback = variant?.cardsOnly ? (usable[0]?.id ?? "") : "account";
+  const allowAccount = !variant?.cardsOnly;
+  const destination =
+    (allowAccount && picked === "account") || usable.some((c) => c.id === picked) ? picked! : fallback;
   const label = program === "itdbone" ? "ITDBONE" : "QRS";
   const destName =
     destination === "account"
@@ -71,6 +88,7 @@ export function CollectPanel({
   };
 
   const confirm = async () => {
+    if (!destination) return;
     setBusy(true);
     setError(null);
     const result = await onConfirm(destination);
@@ -80,10 +98,10 @@ export function CollectPanel({
   };
 
   return (
-    <Panel open={open} title={receipt ? "Receipt" : `Collect ${label} yield`} onClose={busy ? undefined : close}>
+    <Panel open={open} title={receipt ? "Receipt" : (variant?.title ?? `Collect ${label} yield`)} onClose={busy ? undefined : close}>
       {receipt ? (
         <div>
-          <p className="font-display text-[20px] font-semibold text-primary">{label} yield collected</p>
+          <p className="font-display text-[20px] font-semibold text-primary">{variant?.heading ?? `${label} yield collected`}</p>
           <div className="mt-3 rounded-xl bg-elevated px-3.5">
             <LedgerLine
               label="Credited"
@@ -97,7 +115,11 @@ export function CollectPanel({
               <LedgerLine label="At today's rate" value={formatExactCurrency(receipt.usd ?? 0)} />
             )}
             <LedgerLine label="To" value={destName} valueClassName="font-medium" />
-            <LedgerLine label="Yield resumes" value="Now" valueClassName="font-medium" />
+            <LedgerLine
+              label={variant?.footnote?.label ?? "Yield resumes"}
+              value={variant?.footnote?.value ?? "Now"}
+              valueClassName="font-medium"
+            />
           </div>
           <Button size="lg" className="mt-4" onClick={close}>
             Done
@@ -106,15 +128,18 @@ export function CollectPanel({
       ) : (
         <div>
           <p className="text-[15px] leading-relaxed text-muted">
-            {formatCurrency(pendingUsd)} is ready. Choose where it lands; the receipt confirms the exact figure.
+            {variant?.intro ??
+              `${formatCurrency(pendingUsd)} is ready. Choose where it lands; the receipt confirms the exact figure.`}
           </p>
           <div className="mt-3 flex flex-col gap-2" role="radiogroup">
-            <ChoiceRow
-              selected={destination === "account"}
-              onSelect={() => setPicked("account")}
-              label="ITDB account"
-              note="Raises your available balance"
-            />
+            {allowAccount && (
+              <ChoiceRow
+                selected={destination === "account"}
+                onSelect={() => setPicked("account")}
+                label="ITDB account"
+                note="Raises your available balance"
+              />
+            )}
             {cards.length === 0 ? (
               <ChoiceRow selected={false} onSelect={() => {}} disabled label="Your card" note="Open a card first" />
             ) : (
@@ -141,8 +166,8 @@ export function CollectPanel({
             )}
           </div>
           {error && <p className="mt-3 rounded-xl bg-danger-soft px-3.5 py-2.5 text-[14px] text-danger">{error}</p>}
-          <Button size="lg" className="mt-4" disabled={busy} onClick={confirm}>
-            {busy ? "Posting…" : "Confirm collection"}
+          <Button size="lg" className="mt-4" disabled={busy || !destination} onClick={confirm}>
+            {busy ? "Posting…" : !destination ? "Open a card first" : "Confirm"}
           </Button>
         </div>
       )}

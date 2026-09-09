@@ -55,7 +55,13 @@ export function YieldCard({ y, minLabel, onCollect }: YieldCardProps) {
               key={l.code}
               label={l.code === "USD" ? "Currency allowance" : l.code}
               value={<ExactFigure compact={formatCurrency(l.usd)} exact={formatExactCurrency(l.usd)} />}
-              sub={`${formatAmount(l.perDay, 0)} ${l.code === "USD" ? "USD" : l.code} / day${l.code !== "USD" ? ` · ${formatAmount(l.accrued, 2)} built up` : ""}`}
+              sub={`${formatAmount(l.perDay, 0)} ${l.code === "USD" ? "USD" : l.code} / day${
+                l.perDay > l.basePerDay
+                  ? ` (${formatAmount(l.basePerDay, 0)} ×${formatAmount(y.milestone.value, 0)}${
+                      y.accountMultiplier > 1 ? ` ×${formatAmount(y.accountMultiplier, 0)}` : ""
+                    })`
+                  : ""
+              }${l.code !== "USD" ? ` · ${formatAmount(l.accrued, 2)} built up` : ""}`}
               mark={l.code !== "USD" ? <SourceBadge source={l.source} /> : undefined}
             />
           ))}

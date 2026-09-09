@@ -12,6 +12,8 @@ import { TierProgress } from "@/components/shared/tier-progress";
 import { CollectPanel, type CollectOutcome } from "@/components/tokens/collect-panel";
 import { TokenHeader } from "@/components/tokens/token-header";
 import { YieldCard } from "@/components/tokens/yield-card";
+import { MilestoneList, MultiplierBanner } from "@/components/tokens/milestones";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/client/auth";
 import { useCards } from "@/lib/client/cards";
@@ -19,7 +21,7 @@ import { usePortfolio } from "@/lib/client/portfolio";
 import { useJson } from "@/lib/client/use-json";
 import { useWalletLedger } from "@/lib/client/wallet-ledger";
 import { formatAmount, formatCurrency, formatExactCurrency, formatKg } from "@/lib/format";
-import { QRS_METAL_LABEL, QRS_TOKEN, marketUrl } from "@/lib/itdb/config";
+import { QRS_METAL_LABEL, QRS_TOKEN, marketUrl, qrsTierGoldKg } from "@/lib/itdb/config";
 
 const rangeLabel = (min: number, max: number | null) =>
   max === null ? `${formatAmount(min, 0)}+ QRS` : `${formatAmount(min, 0)} – ${formatAmount(max, 0)} QRS`;
@@ -32,6 +34,7 @@ export default function QrsPage() {
   const ledger = useWalletLedger(!!session);
   const { cards } = useCards(session?.address ?? null);
   const [collectOpen, setCollectOpen] = useState(false);
+  const [refundOpen, setRefundOpen] = useState(false);
   const s = summary.data;
 
   const collect = async (destination: string): Promise<CollectOutcome> => {
@@ -54,11 +57,40 @@ export default function QrsPage() {
     }
   };
 
+  const claimRefund = async (destination: string): Promise<CollectOutcome> => {
+    try {
+      const r = await fetch("/api/qrs/actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "presale-refund", to: destination }),
+      });
+      const data = (await r.json()) as { error?: string; usd?: number; credited?: number; currency?: string };
+      if (r.ok) {
+        summary.refresh();
+        ledger.refresh();
+        return { ok: true, usd: data.usd, credited: data.credited, currency: data.currency };
+      }
+      return { ok: false, error: data.error };
+    } catch {
+      return { ok: false, error: "Network error — try again." };
+    }
+  };
+
+  const presale = s?.presale ?? null;
+
   return (
     <div className="flex flex-col gap-6">
       <AppBar back title="QRS" subtitle="Gold-referenced reserve token" />
 
-      <TokenHeader code="QRS" role="Gold-referenced" asset={asset} marketUrl={marketUrl(QRS_TOKEN)} loading={portfolio.loading} tierLabel={s?.tier ? `Tier ${s.tier.tier}` : null} />
+      <TokenHeader
+        code="QRS"
+        role="Gold-referenced"
+        asset={asset}
+        marketUrl={marketUrl(QRS_TOKEN)}
+        loading={portfolio.loading}
+        tierLabel={s?.tier ? `Tier ${s.tier.tier}` : null}
+        priceOverride={s ? { usd: s.backingUsd, label: "Gold backing value", marketLabel: "Market price" } : null}
+      />
 
       {summary.error && !s && <NetworkNotice message={summary.error} onRetry={summary.refresh} />}
 
@@ -73,9 +105,63 @@ export default function QrsPage() {
           balance={s.balance}
           unit="QRS"
           currentTier={s.tier?.tier ?? null}
-          rows={s.tiers.map((t) => ({ tier: t.tier, min: t.min, max: t.max, range: rangeLabel(t.min, t.max), value: `${formatCurrency(t.dailyUsd)} / day`, detail: `${Object.keys(t.daily).length} crypto · gold ${formatKg(t.goldKg)}` }))}
+          rows={s.tiers.map((t) => ({ tier: t.tier, min: t.min, max: t.max, range: rangeLabel(t.min, t.max), value: `${formatCurrency(t.dailyUsd)} / day`, detail: `${Object.keys(t.daily).length} crypto · gold ${formatKg(qrsTierGoldKg(t))}` }))}
         />
       ) : null}
+
+      {presale && (
+        <section className="flex flex-col gap-3">
+          <SectionHeader title="Early bird bonuses" note="pre-sale" />
+          <div className="surface p-5">
+            <p className="text-[13.5px] leading-relaxed text-muted">
+              Your wallet is on the pre-sale list, so both early-bird bonuses are yours.
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-elevated px-3.5 py-3">
+                <p className="text-[12px] text-muted">{presale.refundPct}% Refund (XLM)</p>
+                <p className="tnum font-display mt-1 text-[20px] font-semibold leading-none text-gold">
+                  {formatAmount(presale.refundXlm, 4)}
+                </p>
+                <p className="tnum mt-1 text-[12px] text-muted-2">≈ {formatCurrency(presale.refundUsd)}</p>
+              </div>
+              <div className="rounded-2xl bg-elevated px-3.5 py-3">
+                <p className="text-[12px] text-muted">×2 Tokens Drop (QRS)</p>
+                <p className="tnum font-display mt-1 text-[20px] font-semibold leading-none text-gold">
+                  {formatAmount(presale.bonusQrs, 0)}
+                </p>
+                <p className="tnum mt-1 text-[12px] text-muted-2">on {formatAmount(presale.qrsPurchased, 0)} bought</p>
+              </div>
+            </div>
+
+            {presale.paid ? (
+              <p className="mt-4 rounded-xl bg-success-soft px-3.5 py-2.5 text-[13.5px] text-success">
+                Refund paid on {new Date(presale.paid.paidAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })} —{" "}
+                {formatAmount(presale.paid.credited, 2)} {presale.paid.currency} onto your card.
+              </p>
+            ) : (
+              <Button size="lg" className="mt-4" onClick={() => setRefundOpen(true)}>
+                Take {formatAmount(presale.refundXlm, 2)} XLM refund to a card
+              </Button>
+            )}
+
+            <SimulatedNotice className="mt-4">
+              <span className="font-semibold text-primary">Both bonuses are simulated.</span> The refund is credited inside
+              ITDB and converted to your card&rsquo;s currency — no XLM leaves your wallet, and the ×2 drop is shown as an
+              entitlement rather than moved on chain.
+            </SimulatedNotice>
+          </div>
+        </section>
+      )}
+
+      {s && (
+        <>
+          <MultiplierBanner token="QRS" multiplier={s.yield.milestone} scales="daily yield" />
+          <section className="flex flex-col gap-3">
+            <SectionHeader title="QRS milestones" />
+            <MilestoneList milestones={s.milestones} />
+          </section>
+        </>
+      )}
 
       <section className="flex flex-col gap-3">
         <SectionHeader title="Gold & metals reference" note="simulated" />
@@ -90,9 +176,8 @@ export default function QrsPage() {
               <SourceBadge source={s.gold.source} />
             </div>
             <div className="mt-3">
-              <LedgerLine label="Basis" value={s.gold.basis === "per-token" ? `${s.backing.gramsPerToken} g per QRS` : `Tier ${s.tier?.tier ?? "—"} table`} valueClassName="font-medium" sub={`${formatKg(s.backing.totalKg)} over ${formatAmount(s.backing.totalSupply, 0)} tokens`} />
+              <LedgerLine label="Backing" value={`${s.backing.gramsPerToken} g per QRS`} valueClassName="font-medium" sub={`${formatKg(s.backing.totalKg)} over ${formatAmount(s.backing.totalSupply, 0)} tokens`} />
               <LedgerLine label="Gold price" value={`${formatCurrency(s.gold.usdPerKg)} / kg`} valueClassName="font-medium" />
-              {s.tier && <LedgerLine label="Tier table allocation" value={formatKg(s.gold.tierTableKg)} valueClassName="font-medium" />}
               {s.metals.map((m) => (
                 <LedgerLine key={m.metal} label={QRS_METAL_LABEL[m.metal]} value={<ExactFigure compact={formatCurrency(m.valueUsd)} exact={formatExactCurrency(m.valueUsd)} />} sub={`${formatKg(m.kg)} · ${formatCurrency(m.usdPerKg)} / kg`} mark={<SourceBadge source={m.source} />} />
               ))}
@@ -107,6 +192,25 @@ export default function QrsPage() {
           <Skeleton className="h-[260px] rounded-[20px]" />
         ) : null}
       </section>
+
+      {presale && !presale.paid && (
+        <CollectPanel
+          open={refundOpen}
+          onClose={() => setRefundOpen(false)}
+          program="qrs"
+          pendingUsd={presale.refundUsd}
+          cards={cards}
+          ledgerCards={ledger.cards}
+          onConfirm={claimRefund}
+          variant={{
+            title: "Pre-sale refund",
+            heading: "Refund paid",
+            intro: `${formatAmount(presale.refundXlm, 4)} XLM — ${presale.refundPct}% of your pre-sale spend — converted to your card's currency at today's rate. Simulated: no XLM leaves your wallet.`,
+            cardsOnly: true,
+            footnote: { label: "Bonus", value: "Early bird" },
+          }}
+        />
+      )}
 
       {s && (
         <CollectPanel
