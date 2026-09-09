@@ -164,23 +164,25 @@ const one = (
 /**
  * The authoritative ladder — entry thresholds ONLY.
  *
- * These are the "50% OFF ALL TIERS" figures Tony announced on
- * 2026-09-07, taken verbatim from the marketing post, including Tier 7
- * at 25,000 (he confirmed to use exactly what the post shows even
- * though every other tier is exactly half its old threshold and half of
- * 250,000 would be 125,000). The discount is permanent and the rewards
- * per tier are unchanged; only the entry bar moved.
+ * These are the "50% OFF ALL TIERS" figures announced on 2026-09-07:
+ * every tier is exactly half its previous threshold, and the discount is
+ * permanent. The rewards per tier are unchanged; only the entry bar
+ * moved.
  *
- * CONSEQUENCE OF TIER 7 AT 25,000: a member is put in the highest tier
- * whose threshold they clear, so anyone from 25,000 upward clears Tier
- * 7 and Tiers 5 and 6 can no longer be reached by anybody. Nothing is
- * hidden — `itdboneRange` derives each tier's real span from the
- * thresholds, so an unreachable tier reports itself as such rather than
- * displaying a range it would never assign. Setting Tier 7 back to
- * 125_000 restores Tiers 5 and 6 with no other change.
+ * TIER 7 READS 25,000 IN THE ANNOUNCEMENT AND 125,000 HERE. Half of
+ * 250,000 is 125,000, and every other line of that post is exactly half,
+ * so 25,000 is a dropped digit. Taken literally it would also sit below
+ * Tier 5's own new threshold (25,000) and Tier 6's (50,000), which
+ * cannot be right in a ladder — a member is placed in the highest tier
+ * they clear, so everyone from 25,000 upward would land on Tier 7 and
+ * Tiers 5 and 6 could never be reached by anybody. Tony left the call
+ * here; 125,000 is the only value consistent with the headline of his
+ * own post. THE POST STILL SHOWS 25,000 AND SHOULD BE CORRECTED.
  *
  * No `max` is stored: a second column can disagree with the thresholds,
  * and that is exactly the kind of drift that produces a wrong tier.
+ * `itdboneReachable` stays as a guard — it would catch a future typo
+ * that undercuts a lower tier the way 25,000 did.
  */
 export const ITDBONE_TIERS: ItdboneTier[] = [
   one(1,        500,     250_000,     2_500_000,    100, 40),
@@ -189,7 +191,7 @@ export const ITDBONE_TIERS: ItdboneTier[] = [
   one(4,     12_500,   2_500_000,    25_000_000,    600, 55),
   one(5,     25_000,   5_000_000,    50_000_000,  1_000, 60),
   one(6,     50_000,  10_000_000,   100_000_000,  1_500, 65),
-  one(7,     25_000,  25_000_000,   250_000_000,  2_500, 70),
+  one(7,    125_000,  25_000_000,   250_000_000,  2_500, 70),
   one(8,    250_000,  50_000_000,   500_000_000,  4_000, 75),
   one(9,    500_000, 100_000_000, 1_000_000_000,  6_000, 80),
   one(10, 2_500_000, 250_000_000, 2_500_000_000, 10_000, 90),
