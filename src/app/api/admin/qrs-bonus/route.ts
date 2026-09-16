@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { QRS_BONUS_PCT, QRS_BONUS_UNLOCK_AT } from "@/lib/itdb/qrs-bonus";
 import { QRS_TOKEN } from "@/lib/itdb/config";
-import { getDb } from "@/lib/server/db";
+import { getDb, mutateDb } from "@/lib/server/db";
 import { sessionAccountId } from "@/lib/server/session";
 
 export interface BonusPayoutRow {
@@ -74,4 +74,60 @@ export async function GET(req: Request) {
     rows,
   };
   return NextResponse.json(report);
+}
+
+interface MarkPaidBody {
+  paid?: { accountId: string; txHash: string; at?: number }[];
+}
+
+/**
+ * POST /api/admin/qrs-bonus — record that rows have been paid on chain.
+ *
+ * The payout itself happens outside this app, run by a person against
+ * the GET report. This only writes back the transaction hash so members
+ * stop seeing "awaiting the on-chain payout" and the report stops
+ * listing the row as unpaid. A row that is already marked is left alone,
+ * so re-running a partly finished payout cannot rewrite history.
+ */
+export async function POST(req: Request) {
+  const id = await sessionAccountId(req);
+  if (!id) return NextResponse.json({ error: "Sign in again." }, { status: 401 });
+
+  const db = await getDb();
+  const me = db.accounts.find((a) => a.id === id);
+  if (!me) return NextResponse.json({ error: "Account not found" }, { status: 404 });
+  if (me.role !== "admin")
+    return NextResponse.json({ error: "Admins only." }, { status: 403 });
+
+  let body: MarkPaidBody;
+  try {
+    body = (await req.json()) as MarkPaidBody;
+  } catch {
+    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+  }
+  const paid = body.paid ?? [];
+  if (paid.length === 0 || paid.length > 500)
+    return NextResponse.json({ error: "Send between 1 and 500 rows." }, { status: 400 });
+
+  const result = await mutateDb((store) => {
+    const marked: string[] = [];
+    const skipped: string[] = [];
+    const unknown: string[] = [];
+    for (const row of paid) {
+      const rec = store.qrsBonuses[row.accountId];
+      if (!rec) {
+        unknown.push(row.accountId);
+      } else if (rec.paidOnChainAt) {
+        skipped.push(row.accountId);
+      } else if (typeof row.txHash === "string" && /^[0-9a-f]{64}$/i.test(row.txHash)) {
+        rec.paidOnChainAt = row.at ?? Date.now();
+        rec.txHash = row.txHash;
+        marked.push(row.accountId);
+      } else {
+        unknown.push(row.accountId);
+      }
+    }
+    return { marked: marked.length, alreadyPaid: skipped.length, rejected: unknown.length };
+  });
+  return NextResponse.json(result);
 }
