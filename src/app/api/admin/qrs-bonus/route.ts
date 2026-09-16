@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { QRS_BONUS_PCT, QRS_BONUS_UNLOCK_AT } from "@/lib/itdb/qrs-bonus";
 import { QRS_TOKEN } from "@/lib/itdb/config";
 import { getDb, mutateDb } from "@/lib/server/db";
+import { programInputs } from "@/lib/server/accrual";
+import { ensureQrsBonus } from "@/lib/server/qrs-bonus";
 import { sessionAccountId } from "@/lib/server/session";
 
 export interface BonusPayoutRow {
@@ -76,8 +78,71 @@ export async function GET(req: Request) {
   return NextResponse.json(report);
 }
 
-interface MarkPaidBody {
+interface PostBody {
+  /** "sweep" runs the immediate distribution pass over every account */
+  action?: "sweep";
   paid?: { accountId: string; txHash: string; at?: number }[];
+}
+
+export interface SweepResult {
+  scanned: number;
+  awarded: number;
+  alreadyHad: number;
+  lockedBelowTier1: number;
+  noQrs: number;
+  /** Horizon could not be read for these — re-run to pick them up */
+  unreadable: number;
+  totalQrsOwed: number;
+}
+
+/**
+ * The immediate run: walk every account, read its live QRS balance and
+ * first-acquired date, and record the bonus for anyone it is due to.
+ *
+ * Without this the bonus is only recorded when a member happens to open
+ * the app, which leaves the payout list empty on day one. Awarding is
+ * idempotent, so this is safe to run repeatedly — and it must be re-run
+ * after new members join or after a Horizon wobble, since an account
+ * whose balance could not be read is skipped rather than guessed at.
+ */
+async function sweep(): Promise<SweepResult> {
+  const db = await getDb();
+  const out: SweepResult = {
+    scanned: 0,
+    awarded: 0,
+    alreadyHad: 0,
+    lockedBelowTier1: 0,
+    noQrs: 0,
+    unreadable: 0,
+    totalQrsOwed: 0,
+  };
+
+  // Sequential on purpose: each account costs several Horizon calls and
+  // a 429 here would read as "no QRS" if we let it through (§6.4).
+  for (const account of db.accounts) {
+    out.scanned += 1;
+    const had = db.qrsBonuses[account.id] !== undefined;
+    try {
+      const inputs = await programInputs("qrs", account.wallets);
+      const view = await ensureQrsBonus(
+        account,
+        db.qrsBonuses[account.id],
+        inputs.balance,
+        inputs.since,
+        inputs.holders,
+      );
+      if (view.state === "delivered") {
+        if (had) out.alreadyHad += 1;
+        else out.awarded += 1;
+        out.totalQrsOwed += view.bonusQrs;
+      } else if (view.state === "locked") out.lockedBelowTier1 += 1;
+      else if (view.state === "none") out.noQrs += 1;
+      else out.unreadable += 1;
+    } catch {
+      out.unreadable += 1;
+    }
+  }
+  return out;
 }
 
 /**
@@ -99,12 +164,15 @@ export async function POST(req: Request) {
   if (me.role !== "admin")
     return NextResponse.json({ error: "Admins only." }, { status: 403 });
 
-  let body: MarkPaidBody;
+  let body: PostBody;
   try {
-    body = (await req.json()) as MarkPaidBody;
+    body = (await req.json()) as PostBody;
   } catch {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
+
+  if (body.action === "sweep") return NextResponse.json(await sweep());
+
   const paid = body.paid ?? [];
   if (paid.length === 0 || paid.length > 500)
     return NextResponse.json({ error: "Send between 1 and 500 rows." }, { status: 400 });

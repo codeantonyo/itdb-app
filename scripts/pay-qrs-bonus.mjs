@@ -11,7 +11,12 @@
  *   3. Dry run (no send):      node --env-file=.env scripts/pay-qrs-bonus.mjs payouts.json
  *   4. Send for real:          node --env-file=.env scripts/pay-qrs-bonus.mjs payouts.json --confirm
  *
- * QRS_SECRET is read from the environment file you pass on the command
+ * QRS_SECRET is the account that PAYS. Normally that is the DISTRIBUTOR,
+ * which moves QRS that already exists. If you point it at the issuer
+ * instead, every payment MINTS new supply — the script says so plainly
+ * and enforces the cap in that case.
+ *
+ * It is read from the environment file you pass on the command
  * line. It is never taken as an argument (that would put it in your
  * shell history) and never printed — not in logs, not in errors.
  *
@@ -54,13 +59,13 @@ const asset = report.asset ?? {};
 if (!asset.code || !asset.issuer) die(`${file} does not look like the admin payout report.`);
 
 const keypair = Keypair.fromSecret(secret);
-const issuer = keypair.publicKey();
-if (issuer !== asset.issuer) {
-  die(
-    `QRS_SECRET belongs to ${issuer},\n  but the report's issuer is ${asset.issuer}.\n` +
-      "  Refusing to pay from the wrong account.",
-  );
-}
+const source = keypair.publicKey();
+
+// Two legitimate ways to pay, and they are not the same act:
+//   distributor - moves QRS that already exists. Limited by its balance.
+//   issuer      - MINTS new QRS. Limited by nothing on chain, so the
+//                 supply cap has to be enforced here.
+const minting = source === asset.issuer;
 
 const unpaid = (report.rows ?? []).filter((r) => !r.paidOnChainAt && r.bonusQrs > 0);
 if (unpaid.length === 0) {
@@ -74,7 +79,8 @@ const qrs = new Asset(asset.code, asset.issuer);
 // ---- checks before anything is signed ---------------------------------
 
 console.log(`\nQRS ${report.pct}% Milestone Bonus payout`);
-console.log(`  issuer      ${issuer}`);
+console.log(`  paying from ${source}`);
+console.log(`  mode        ${minting ? "ISSUER — every payment MINTS new QRS" : "distributor — moves existing QRS"}`);
 console.log(`  horizon     ${HORIZON}`);
 console.log(`  rows unpaid ${unpaid.length} of ${report.rows.length}\n`);
 
@@ -111,22 +117,48 @@ if (blocked.length > 0) {
   console.log("");
 }
 
-// Supply cap: an issuer payment MINTS, and Stellar does not enforce a
-// cap unless the issuer is locked. Check it here so the promise holds.
-try {
-  const [{ amount: circulating = "0" } = {}] = (
-    await server.assets().forCode(asset.code).forIssuer(asset.issuer).call()
-  ).records;
-  const after = Number(circulating) + total;
-  console.log(`  circulating now   ${Number(circulating).toLocaleString("en-US")} QRS`);
-  console.log(`  this payout       ${total.toLocaleString("en-US")} QRS`);
-  console.log(`  after payout      ${after.toLocaleString("en-US")} QRS of ${SUPPLY_CAP.toLocaleString("en-US")} cap`);
-  if (after > SUPPLY_CAP) {
-    console.log(`\n⚠ THIS PAYOUT WOULD PASS THE ${SUPPLY_CAP.toLocaleString("en-US")} QRS CAP by ${(after - SUPPLY_CAP).toLocaleString("en-US")} QRS.`);
-    if (confirm) die("Refusing to mint past the stated cap. Remove --confirm and review the list.");
+// What limits this payout depends on who is paying.
+if (minting) {
+  // Stellar does not enforce a cap unless the issuer is locked, so the
+  // promise has to be kept right here.
+  try {
+    const [{ amount: circulating = "0" } = {}] = (
+      await server.assets().forCode(asset.code).forIssuer(asset.issuer).call()
+    ).records;
+    const after = Number(circulating) + total;
+    console.log(`  circulating now   ${Number(circulating).toLocaleString("en-US")} QRS`);
+    console.log(`  this payout       ${total.toLocaleString("en-US")} QRS  (newly minted)`);
+    console.log(`  after payout      ${after.toLocaleString("en-US")} QRS of ${SUPPLY_CAP.toLocaleString("en-US")} cap`);
+    if (after > SUPPLY_CAP) {
+      console.log(`
+! THIS PAYOUT WOULD PASS THE ${SUPPLY_CAP.toLocaleString("en-US")} QRS CAP by ${(after - SUPPLY_CAP).toLocaleString("en-US")} QRS.`);
+      if (confirm) die("Refusing to mint past the stated cap. Drop --confirm and review the list.");
+    }
+  } catch {
+    console.log("  (could not read circulating supply — check the cap yourself)");
   }
-} catch {
-  console.log("  (could not read circulating supply — check the cap yourself)");
+} else {
+  // A distributor can only pay what it holds. Nothing is minted, so the
+  // cap cannot move; running dry partway through is the failure to catch.
+  let held = 0;
+  try {
+    const acct = await server.loadAccount(source);
+    const line = acct.balances.find(
+      (b) => b.asset_code === asset.code && b.asset_issuer === asset.issuer,
+    );
+    if (!line) die(`The paying account holds no ${asset.code} trustline for that issuer.`);
+    held = Number(line.balance);
+  } catch (e) {
+    die(`Could not load the paying account ${source} from Horizon. ${e?.message ?? ""}`);
+  }
+  console.log(`  distributor holds ${held.toLocaleString("en-US")} QRS`);
+  console.log(`  this payout       ${total.toLocaleString("en-US")} QRS`);
+  console.log(`  left afterwards   ${(held - total).toLocaleString("en-US")} QRS`);
+  if (total > held) {
+    console.log(`
+! SHORT BY ${(total - held).toLocaleString("en-US")} QRS — the distributor cannot cover this payout.`);
+    if (confirm) die("Refusing to start a payout that would run out partway through.");
+  }
 }
 
 if (payable.length === 0) die("No payable rows.");
@@ -149,7 +181,7 @@ for (let i = 0; i < payable.length; i += OPS_PER_TX) batches.push(payable.slice(
 console.log(`Sending ${payable.length} payments in ${batches.length} transaction(s)…\n`);
 const done = [];
 for (const [i, batch] of batches.entries()) {
-  const account = await server.loadAccount(issuer); // reload for a fresh sequence
+  const account = await server.loadAccount(source); // reload for a fresh sequence
   let tx = new TransactionBuilder(account, {
     fee: String(Number(BASE_FEE) * 10),
     networkPassphrase: Networks.PUBLIC,
