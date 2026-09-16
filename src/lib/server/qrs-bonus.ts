@@ -90,7 +90,7 @@ export function qrsBonusView(
   if (firstAcquiredAt === null) return view({ state: "pending", basisBalance: balance });
 
   const category = qrsBonusCategory(firstAcquiredAt);
-  if (qrsBonusPayable(category, balance)) {
+  if (qrsBonusPayable(balance)) {
     return view({ state: "delivered", category, basisBalance: balance, bonusQrs: qrsBonusAmount(balance) });
   }
   return view({
@@ -149,7 +149,7 @@ export async function ensureQrsBonus(
     }
 
     const category = qrsBonusCategory(firstAcquiredAt);
-    if (!qrsBonusPayable(category, balance)) {
+    if (!qrsBonusPayable(balance)) {
       return qrsBonusView(undefined, balance, firstAcquiredAt);
     }
 

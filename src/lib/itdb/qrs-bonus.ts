@@ -3,19 +3,19 @@ import { QRS_TIERS } from "./config";
 /**
  * The QRS 25% Milestone Bonus.
  *
- * Two categories with different rules:
+ * ONE RULE: hold at least Tier 1 (10,000 QRS) and you get 25% of your
+ * balance. Tony settled this on 2026-09-16 — every wallet holding QRS
+ * at Tier 1 minimum, existing holder or new. Below Tier 1 pays nothing,
+ * and the member is shown how far short they are.
  *
- *   EXISTING holders — held QRS before the unlock. They get 25% of their
- *   balance straight away, at any size, tier or none.
+ * The category below is kept only to label how a member arrived, since
+ * it is already written into awards made before the rule was settled.
+ * It no longer decides who is paid.
  *
- *   NEW holders — acquired QRS after the unlock. They get 25% only once
- *   their balance reaches Tier 1, and nothing before that.
- *
- * Which category a member falls into is decided by WHEN THEY FIRST
- * ACQUIRED QRS ON CHAIN, not by when the app happened to look at them.
- * A balance snapshot would have been wrong for anyone who did not open
- * the app on unlock day; the acquisition date is a fact about the chain
- * and reads the same whenever it is asked.
+ * ELIGIBILITY IS A PROPERTY OF THE WALLET, NOT THE ACCOUNT. The app can
+ * only award members it knows about, so it is not the authority on who
+ * qualifies — `scripts/qrs-holders-payout.mjs` reads every holder from
+ * Horizon and is what the payout actually runs from.
  *
  * THE BONUS IS RECORDED, NOT MINTED. Awarding writes an entitlement into
  * the ITDB ledger and never signs or submits a Stellar transaction, so
@@ -48,10 +48,9 @@ export function qrsBonusAmount(balance: number): number {
 }
 
 /**
- * Whether the bonus is payable right now. Existing holders qualify on
- * any balance above zero; new holders only at Tier 1 and above.
+ * Whether the bonus is payable: Tier 1 or above, for everyone. The
+ * category is deliberately not consulted.
  */
-export function qrsBonusPayable(category: QrsBonusCategory, balance: number): boolean {
-  if (!(balance > 0)) return false;
-  return category === "existing" || balance >= QRS_BONUS_TIER1_MIN;
+export function qrsBonusPayable(balance: number): boolean {
+  return balance >= QRS_BONUS_TIER1_MIN;
 }
