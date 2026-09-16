@@ -64,7 +64,7 @@ const amount = (n: number, unit: string, digits = 2) =>
 
 /** The member's own 25% milestone bonus, with its exact figure. */
 function bonusMilestone(b: QrsBonusView): Milestone[] {
-  if (b.state === "none" || b.state === "pending") return [];
+  if (b.state === "none" || b.state === "pending" || b.state === "duplicate") return [];
   if (b.state === "locked") {
     return [
       {

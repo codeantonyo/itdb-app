@@ -112,7 +112,7 @@ export default function QrsPage() {
         />
       ) : null}
 
-      {bonus && bonus.state !== "none" && bonus.state !== "pending" && (
+      {bonus && bonus.state !== "none" && bonus.state !== "pending" && bonus.state !== "duplicate" && (
         <section className="flex flex-col gap-3">
           <SectionHeader title={`${bonus.pct}% Milestone Bonus`} note="unlocked" />
           <div className="surface p-5">

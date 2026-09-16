@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useState } from "react";
 import { Check, ChevronRight, Copy, LogOut, Moon, Plus, Sun, Trash2, Wallet } from "lucide-react";
 import { AppBar } from "@/components/layout/app-bar";
@@ -119,6 +121,18 @@ export default function ProfilePage() {
           onClick={() => setSheet("wallets")}
         />
       </div>
+
+      {session.role === "admin" && (
+        <>
+          <p className="label mb-1.5 mt-5 px-1">Operator</p>
+          <div className="surface divide-y divide-hairline">
+            <Link href="/admin/qrs-bonus" className="tap flex items-center gap-3 px-4 py-3.5">
+              <span className="flex-1 text-[15.5px] text-primary">QRS 25% bonus</span>
+              <ChevronRight className="size-4 shrink-0 text-muted-2" />
+            </Link>
+          </div>
+        </>
+      )}
 
       {/* ---------------- Referral ---------------- */}
       <p className="label mb-1.5 mt-5 px-1">Invite</p>

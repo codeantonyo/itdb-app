@@ -27,6 +27,8 @@ import { mutateDb, type DbAccount, type QrsBonusRecord } from "./db";
 export type QrsBonusState =
   /** Bonus owed and recorded */
   | "delivered"
+  /** This wallet's bonus was already awarded on another account */
+  | "duplicate"
   /** New holder below Tier 1 — nothing owed yet */
   | "locked"
   /** Holds no QRS, so there is nothing to take 25% of */
@@ -101,6 +103,25 @@ export function qrsBonusView(
 }
 
 /**
+ * Wallets already covered by someone else's award.
+ *
+ * A wallet can be registered on more than one ITDB account, and the
+ * bonus belongs to the WALLET, not the account — paying per account
+ * would pay a shared wallet twice. This is the guard for that.
+ */
+function walletsAlreadyAwarded(
+  records: Record<string, QrsBonusRecord>,
+  exceptAccountId: string,
+): Set<string> {
+  const taken = new Set<string>();
+  for (const [accountId, rec] of Object.entries(records)) {
+    if (accountId === exceptAccountId) continue;
+    for (const w of rec.wallets) taken.add(w);
+  }
+  return taken;
+}
+
+/**
  * Award the bonus if it is due and not already recorded, then return the
  * member's view. Safe to call on every read: it is a no-op once the
  * record exists, and it never writes on an unknown balance.
@@ -119,6 +140,13 @@ export async function ensureQrsBonus(
     // Re-check inside the mutation: a concurrent read may have awarded it.
     const already = db.qrsBonuses[account.id];
     if (already) return qrsBonusView(already, balance, firstAcquiredAt);
+
+    // The bonus follows the wallet. If one of these wallets was already
+    // paid through another account, awarding again would pay it twice.
+    const taken = walletsAlreadyAwarded(db.qrsBonuses, account.id);
+    if (qrsWallets.some((w) => taken.has(w))) {
+      return view({ state: "duplicate", basisBalance: balance });
+    }
 
     const category = qrsBonusCategory(firstAcquiredAt);
     if (!qrsBonusPayable(category, balance)) {

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { QRS_BONUS_PCT, QRS_BONUS_UNLOCK_AT } from "@/lib/itdb/qrs-bonus";
 import { QRS_TOKEN } from "@/lib/itdb/config";
 import { getDb, mutateDb } from "@/lib/server/db";
+import { HORIZON } from "@/lib/stellar/horizon";
+import { horizonJson } from "@/lib/stellar/horizon-fetch";
 import { programInputs } from "@/lib/server/accrual";
 import { ensureQrsBonus } from "@/lib/server/qrs-bonus";
 import { sessionAccountId } from "@/lib/server/session";
@@ -79,8 +81,11 @@ export async function GET(req: Request) {
 }
 
 interface PostBody {
-  /** "sweep" runs the immediate distribution pass over every account */
-  action?: "sweep";
+  /**
+   * "sweep"     — record what every account is owed (the immediate run)
+   * "reconcile" — read the chain and mark rows that have actually landed
+   */
+  action?: "sweep" | "reconcile";
   paid?: { accountId: string; txHash: string; at?: number }[];
 }
 
@@ -90,9 +95,116 @@ export interface SweepResult {
   alreadyHad: number;
   lockedBelowTier1: number;
   noQrs: number;
+  /** Skipped: the wallet's bonus was already awarded on another account */
+  duplicateWallet: number;
   /** Horizon could not be read for these — re-run to pick them up */
   unreadable: number;
   totalQrsOwed: number;
+}
+
+export interface ReconcileResult {
+  checked: number;
+  confirmed: number;
+  /** Awarded but no matching payment found on chain yet */
+  stillOwed: number;
+  /** Horizon could not be read — nothing was concluded for these */
+  unreadable: number;
+  /** Already marked paid before this run */
+  alreadyPaid: number;
+  missing: { username: string; wallet: string; bonusQrs: number }[];
+}
+
+interface HorizonPayment {
+  type: string;
+  transaction_hash: string;
+  created_at: string;
+  to?: string;
+  amount?: string;
+  asset_code?: string;
+  asset_issuer?: string;
+}
+
+/**
+ * Confirm the payout from the chain rather than from a receipts file.
+ *
+ * For each awarded-but-unpaid row it looks for a QRS payment INTO that
+ * wallet, of at least the bonus, dated after the award. A row is marked
+ * paid only when such a payment exists, with that transaction's real
+ * hash — so "delivered" in the app always means the tokens genuinely
+ * arrived, and a member the payout missed stays visibly owed instead of
+ * being quietly ticked off.
+ *
+ * A Horizon failure counts as unreadable, never as "not paid".
+ */
+async function reconcile(): Promise<ReconcileResult> {
+  const db = await getDb();
+  const out: ReconcileResult = {
+    checked: 0,
+    confirmed: 0,
+    stillOwed: 0,
+    unreadable: 0,
+    alreadyPaid: 0,
+    missing: [],
+  };
+  const found: { accountId: string; txHash: string; at: number }[] = [];
+
+  for (const [accountId, rec] of Object.entries(db.qrsBonuses)) {
+    if (rec.paidOnChainAt) {
+      out.alreadyPaid += 1;
+      continue;
+    }
+    out.checked += 1;
+    const wallet = rec.wallets[0];
+    const username = db.accounts.find((a) => a.id === accountId)?.username ?? "—";
+    if (!wallet) {
+      out.stillOwed += 1;
+      out.missing.push({ username, wallet: "—", bonusQrs: rec.bonusQrs });
+      continue;
+    }
+
+    const url = `${HORIZON}/accounts/${wallet}/payments?limit=200&order=desc`;
+    const res = await horizonJson<{ _embedded: { records: HorizonPayment[] } }>(url);
+    if (res.kind === "unavailable") {
+      out.unreadable += 1;
+      continue;
+    }
+    if (res.kind === "absent") {
+      out.stillOwed += 1;
+      out.missing.push({ username, wallet, bonusQrs: rec.bonusQrs });
+      continue;
+    }
+
+    const hit = res.data._embedded.records.find(
+      (p) =>
+        p.type === "payment" &&
+        p.to === wallet &&
+        p.asset_code === QRS_TOKEN.code &&
+        p.asset_issuer === QRS_TOKEN.issuer &&
+        Number(p.amount ?? 0) >= rec.bonusQrs - 1e-7 &&
+        Date.parse(p.created_at) >= rec.awardedAt - 60_000,
+    );
+    if (hit) {
+      found.push({ accountId, txHash: hit.transaction_hash, at: Date.parse(hit.created_at) });
+      out.confirmed += 1;
+    } else {
+      out.stillOwed += 1;
+      out.missing.push({ username, wallet, bonusQrs: rec.bonusQrs });
+    }
+  }
+
+  if (found.length > 0) {
+    await mutateDb((store) => {
+      for (const f of found) {
+        const rec = store.qrsBonuses[f.accountId];
+        if (rec && !rec.paidOnChainAt) {
+          rec.paidOnChainAt = f.at;
+          rec.txHash = f.txHash;
+        }
+      }
+      return null;
+    });
+  }
+  return out;
 }
 
 /**
@@ -113,6 +225,7 @@ async function sweep(): Promise<SweepResult> {
     alreadyHad: 0,
     lockedBelowTier1: 0,
     noQrs: 0,
+    duplicateWallet: 0,
     unreadable: 0,
     totalQrsOwed: 0,
   };
@@ -137,6 +250,7 @@ async function sweep(): Promise<SweepResult> {
         out.totalQrsOwed += view.bonusQrs;
       } else if (view.state === "locked") out.lockedBelowTier1 += 1;
       else if (view.state === "none") out.noQrs += 1;
+      else if (view.state === "duplicate") out.duplicateWallet += 1;
       else out.unreadable += 1;
     } catch {
       out.unreadable += 1;
@@ -172,6 +286,7 @@ export async function POST(req: Request) {
   }
 
   if (body.action === "sweep") return NextResponse.json(await sweep());
+  if (body.action === "reconcile") return NextResponse.json(await reconcile());
 
   const paid = body.paid ?? [];
   if (paid.length === 0 || paid.length > 500)
