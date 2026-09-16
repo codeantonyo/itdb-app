@@ -150,8 +150,10 @@ const QRS_MILESTONES: Milestone[] = [
     id: "qrs-m1",
     token: "QRS",
     title: "25% QRS bonus",
-    detail: "Every QRS holder receives a further 25% in QRS.",
-    status: "locked",
+    detail:
+      "Unlocked. Existing holders receive 25% of their balance at once; " +
+      "anyone who buys from now on receives it on reaching Tier 1.",
+    status: "active",
     threshold: "2,500,000 QRS sold",
     soldTarget: 2_500_000,
   },

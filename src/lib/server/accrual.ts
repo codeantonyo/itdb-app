@@ -185,11 +185,11 @@ export function computeYield(
   };
 }
 
-/** Live inputs for a member: balance + first-acquired across wallets. */
+/** Live inputs for a member: balance, first-acquired, holding wallets. */
 export async function programInputs(
   program: Program,
   wallets: string[],
-): Promise<{ balance: number; since: number | null }> {
+): Promise<{ balance: number; since: number | null; holders: string[] }> {
   const def = PROGRAMS[program];
   const holdings = await memberHoldings(wallets);
   const balance = tokenBalance(holdings, def.token);
@@ -204,7 +204,7 @@ export async function programInputs(
       ),
     )
   ).filter((t): t is number => t !== null);
-  return { balance, since: times.length > 0 ? Math.min(...times) : null };
+  return { balance, since: times.length > 0 ? Math.min(...times) : null, holders };
 }
 
 export type CollectResult =

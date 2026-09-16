@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Check, Lock } from "lucide-react";
 import type { QrsSummary } from "@/app/api/qrs/route";
 import { AppBar } from "@/components/layout/app-bar";
 import { ExactFigure } from "@/components/shared/exact-figure";
@@ -21,6 +22,7 @@ import { usePortfolio } from "@/lib/client/portfolio";
 import { useJson } from "@/lib/client/use-json";
 import { useWalletLedger } from "@/lib/client/wallet-ledger";
 import { formatAmount, formatCurrency, formatExactCurrency, formatKg } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { QRS_METAL_LABEL, QRS_TOKEN, marketUrl, qrsTierGoldKg } from "@/lib/itdb/config";
 
 const rangeLabel = (min: number, max: number | null) =>
@@ -77,6 +79,7 @@ export default function QrsPage() {
   };
 
   const presale = s?.presale ?? null;
+  const bonus = s?.bonus ?? null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -108,6 +111,83 @@ export default function QrsPage() {
           rows={s.tiers.map((t) => ({ tier: t.tier, min: t.min, max: t.max, range: rangeLabel(t.min, t.max), value: `${formatCurrency(t.dailyUsd)} / day`, detail: `${Object.keys(t.daily).length} crypto · gold ${formatKg(qrsTierGoldKg(t))}` }))}
         />
       ) : null}
+
+      {bonus && bonus.state !== "none" && bonus.state !== "pending" && (
+        <section className="flex flex-col gap-3">
+          <SectionHeader title={`${bonus.pct}% Milestone Bonus`} note="unlocked" />
+          <div className="surface p-5">
+            {bonus.state === "delivered" ? (
+              <>
+                <div className="flex items-start gap-3">
+                  <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-success-soft text-success">
+                    <Check className="size-[22px]" strokeWidth={2.4} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-[15.5px] font-semibold text-primary">QRS {bonus.pct}% Milestone Bonus</p>
+                      <span className="rounded-md bg-success-soft px-1.5 py-px text-[10.5px] font-bold uppercase tracking-wide text-success">
+                        Delivered
+                      </span>
+                    </div>
+                    <p className="tnum font-display mt-1.5 text-[26px] font-semibold leading-none text-gold">
+                      {formatAmount(bonus.bonusQrs, 2)} QRS
+                    </p>
+                    <p className="mt-1.5 text-[13px] text-muted">
+                      {bonus.pct}% of your {formatAmount(bonus.basisBalance, 2)} QRS
+                      {bonus.category === "existing" ? " as an existing holder" : " on reaching Tier 1"}
+                    </p>
+                    {bonus.awardedAt && (
+                      <p className="tnum mt-1 text-[12.5px] text-muted-2">
+                        Recorded{" "}
+                        {new Date(bonus.awardedAt).toLocaleString("en-US", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <p
+                  className={cn(
+                    "mt-4 rounded-xl px-3.5 py-2.5 text-[13px] leading-relaxed",
+                    bonus.paidOnChainAt ? "bg-success-soft text-success" : "bg-elevated text-muted",
+                  )}
+                >
+                  {bonus.paidOnChainAt ? (
+                    <>Paid to your wallet on chain.</>
+                  ) : (
+                    <>
+                      <span className="font-semibold text-primary">Awaiting the on-chain payout.</span> Your entitlement
+                      is recorded and cannot change; it is not in your wallet balance until the issuer sends it.
+                    </>
+                  )}
+                </p>
+              </>
+            ) : (
+              <div className="flex items-start gap-3">
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-elevated text-muted-2">
+                  <Lock className="size-[19px]" strokeWidth={2} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-[15.5px] font-semibold text-primary">QRS {bonus.pct}% Bonus</p>
+                    <span className="rounded-md bg-elevated px-1.5 py-px text-[10.5px] font-bold uppercase tracking-wide text-muted-2">
+                      Locked
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[13.5px] leading-relaxed text-muted">
+                    Reach Tier 1 ({formatAmount(bonus.tier1Min, 0)} QRS) to unlock.{" "}
+                    <span className="tnum font-semibold text-primary">
+                      {formatAmount(bonus.needed, 2)} QRS
+                    </span>{" "}
+                    to go — worth about {formatAmount(bonus.tier1Min * (bonus.pct / 100), 0)} QRS at the threshold.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {presale && (
         <section className="flex flex-col gap-3">

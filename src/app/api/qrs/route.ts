@@ -20,6 +20,7 @@ import { earlyBirdMultiplier } from "@/lib/itdb/early-birds";
 import { getDb } from "@/lib/server/db";
 import { getFx, type PriceSource } from "@/lib/server/fx";
 import { presaleView, type PresaleBonusView } from "@/lib/server/presale";
+import { ensureQrsBonus, type QrsBonusView } from "@/lib/server/qrs-bonus";
 import { sessionAccountId } from "@/lib/server/session";
 
 export interface MetalPosition {
@@ -42,6 +43,8 @@ export interface QrsSummary {
   milestones: Milestone[];
   /** Pre-sale early-bird bonuses; null when this member did not buy */
   presale: PresaleBonusView | null;
+  /** The 25% milestone bonus: delivered, locked behind Tier 1, or n/a */
+  bonus: QrsBonusView;
   /** Gold reference: 100 g per QRS, the single backing ratio */
   gold: MetalPosition & { gramsPerToken: number };
   /**
@@ -58,6 +61,36 @@ export interface QrsSummary {
 
 const amount = (n: number, unit: string, digits = 2) =>
   `${n.toLocaleString("en-US", { maximumFractionDigits: digits })} ${unit}`;
+
+/** The member's own 25% milestone bonus, with its exact figure. */
+function bonusMilestone(b: QrsBonusView): Milestone[] {
+  if (b.state === "none" || b.state === "pending") return [];
+  if (b.state === "locked") {
+    return [
+      {
+        id: "qrs-bonus-25",
+        token: "QRS",
+        title: `QRS ${b.pct}% Milestone Bonus`,
+        detail: `Reach Tier 1 (${amount(b.tier1Min, "QRS", 0)}) to unlock — ${amount(b.needed, "QRS", 0)} to go.`,
+        status: "locked",
+        threshold: `Tier 1 · ${amount(b.tier1Min, "QRS", 0)}`,
+      },
+    ];
+  }
+  return [
+    {
+      id: "qrs-bonus-25",
+      token: "QRS",
+      title: `QRS ${b.pct}% Milestone Bonus — Delivered`,
+      detail:
+        `${b.pct}% of your ${amount(b.basisBalance, "QRS", 0)} balance, recorded on ` +
+        `${new Date(b.awardedAt ?? Date.now()).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}` +
+        (b.paidOnChainAt ? " and paid on chain." : ". Awaiting the on-chain payout from the issuer."),
+      status: "delivered",
+      amount: amount(b.bonusQrs, "QRS", 0),
+    },
+  ];
+}
 
 /**
  * The two pre-sale bonuses as milestones, with this member's exact
@@ -98,7 +131,7 @@ export async function GET(req: Request) {
   const account = db.accounts.find((a) => a.id === id);
   if (!account) return NextResponse.json({ error: "Account not found" }, { status: 404 });
 
-  let inputs: { balance: number; since: number | null };
+  let inputs: { balance: number; since: number | null; holders: string[] };
   let fx: Awaited<ReturnType<typeof getFx>>;
   try {
     [inputs, fx] = await Promise.all([programInputs("qrs", account.wallets), getFx()]);
@@ -112,6 +145,16 @@ export async function GET(req: Request) {
   // Eligibility is the allowlist, nothing else — a member who did not
   // buy in the pre-sale never sees these two bonuses.
   const presale = presaleView(account, db.presaleRefunds[id], fx);
+
+  // Awarded on sight and only once — see lib/server/qrs-bonus.ts. No
+  // tokens move here; this records what the issuer owes.
+  const bonus = await ensureQrsBonus(
+    account,
+    db.qrsBonuses[id],
+    inputs.balance,
+    inputs.since,
+    inputs.holders,
+  );
 
   const tier = qrsTierFor(inputs.balance);
   const nxt = nextQrsTier(inputs.balance);
@@ -144,8 +187,9 @@ export async function GET(req: Request) {
     balance: inputs.balance,
     tier,
     next: nxt ? { ...nxt, needed: Math.max(nxt.min - inputs.balance, 0) } : null,
-    milestones: [...presaleMilestones(presale), ...milestonesFor("QRS")],
+    milestones: [...bonusMilestone(bonus), ...presaleMilestones(presale), ...milestonesFor("QRS")],
     presale,
+    bonus,
     backingUsd: qrsGoldBackingUsd(fx.metalUsdPerKg("gold")),
     yield: computeYield("qrs", inputs.balance, inputs.since, db.qrs[id], fx, earlyBirdMultiplier(account.wallets)),
     gold,

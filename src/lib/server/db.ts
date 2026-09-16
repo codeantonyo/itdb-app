@@ -158,6 +158,27 @@ export interface PresaleRefundRecord {
   currency: string;
 }
 
+/**
+ * A member's QRS 25% Milestone Bonus, written once when it is awarded.
+ * Its presence IS the "delivered" flag, so there is no separate boolean
+ * that could fall out of step with it.
+ */
+export interface QrsBonusRecord {
+  awardedAt: number;
+  /** "existing" holder (paid at once) or "new" (paid at Tier 1) */
+  category: "existing" | "new";
+  /** The QRS balance the 25% was calculated against */
+  basisBalance: number;
+  /** QRS owed to this member */
+  bonusQrs: number;
+  /** Wallets holding QRS at the moment of the award */
+  wallets: string[];
+  /** Set once the issuer has actually paid it out on chain */
+  paidOnChainAt?: number;
+  /** Stellar transaction hash of that payout */
+  txHash?: string;
+}
+
 export type OtpPurpose = "signup" | "reset" | "change_email";
 
 export interface OtpRecord {
@@ -215,6 +236,8 @@ export interface DbShape {
   airdrops: Record<string, AirdropRecord>;
   /** Paid QRS pre-sale refunds, keyed by accountId */
   presaleRefunds: Record<string, PresaleRefundRecord>;
+  /** Awarded QRS 25% milestone bonuses, keyed by accountId */
+  qrsBonuses: Record<string, QrsBonusRecord>;
 }
 
 const DB_DIR = path.join(process.cwd(), "data");
@@ -260,6 +283,7 @@ const emptyDb = (): DbShape => ({
   qrs: {},
   airdrops: {},
   presaleRefunds: {},
+  qrsBonuses: {},
 });
 
 const obj = <T>(v: unknown, fallback: T): T =>
@@ -289,6 +313,7 @@ function normalizeDb(db: Partial<DbShape>): DbShape {
     qrs: obj(db.qrs, {}),
     airdrops: obj(db.airdrops, {}),
     presaleRefunds: obj(db.presaleRefunds, {}),
+    qrsBonuses: obj(db.qrsBonuses, {}),
   };
 }
 
@@ -459,6 +484,8 @@ function splitDb(db: DbShape): Map<string, string> {
     out.set(`airdrop:${id}`, JSON.stringify(a));
   for (const [id, r] of Object.entries(db.presaleRefunds))
     out.set(`presale:${id}`, JSON.stringify(r));
+  for (const [id, r] of Object.entries(db.qrsBonuses))
+    out.set(`qrsbonus:${id}`, JSON.stringify(r));
   return out;
 }
 
@@ -490,6 +517,8 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
       db.airdrops[shard.slice(8)] = value as AirdropRecord;
     else if (shard.startsWith("presale:"))
       db.presaleRefunds[shard.slice(8)] = value as PresaleRefundRecord;
+    else if (shard.startsWith("qrsbonus:"))
+      db.qrsBonuses[shard.slice(9)] = value as QrsBonusRecord;
   }
   db.accounts.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   return normalizeDb(db);
@@ -501,7 +530,7 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
  * deployment's shards survive a brief old/new instance overlap.
  */
 const OWNED_SHARD_RE =
-  /^(meta|otps|otpThrottle|loginThrottle|acquired)$|^(account|userstate|ledger|itdbone|qrs|airdrop|presale):/;
+  /^(meta|otps|otpThrottle|loginThrottle|acquired)$|^(account|userstate|ledger|itdbone|qrs|airdrop|presale|qrsbonus):/;
 
 function entryFromRow(row: {
   shard: string;
