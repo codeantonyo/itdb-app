@@ -131,11 +131,9 @@ export const STARTER_PACK: { metal: string; grams: number }[] = [
 ];
 
 /**
- * Early birds also take 50% off the holding tiers.
- *
- * TODO(tony): this is applied to the ITDBONE and QRS ladders, the only
- * tier system the app has — the vault itself has no tiers. Set this to
- * 1 to switch it off; nothing else needs changing.
+ * Early birds take 50% off the ITDBVAULT holding tiers — the ladder in
+ * vault-tiers.ts, not the ITDBONE or QRS ones. Set this to 1 to switch
+ * the discount off; nothing else needs changing.
  */
 export const EARLY_BIRD_TIER_DIVISOR = 2;
 

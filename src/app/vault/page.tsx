@@ -10,6 +10,7 @@ import {
   Branches,
   EarlyBird,
   Milestones,
+  Tiers,
   WhatItHolds,
   WhatYouReceive,
 } from "@/components/vault/vault-sections";
@@ -247,6 +248,7 @@ export default function VaultPage() {
 
       {s && (
         <>
+          <Tiers s={s} />
           <EarlyBird s={s} />
           <Milestones s={s} />
           <WhatItHolds s={s} />

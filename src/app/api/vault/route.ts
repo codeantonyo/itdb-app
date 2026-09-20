@@ -27,6 +27,15 @@ import {
   vaultTokenBonusPct,
 } from "@/lib/itdb/vault";
 import type { Milestone } from "@/lib/itdb/milestones";
+import {
+  VAULT_TIERS,
+  nextVaultTier,
+  vaultTierFor,
+  vaultTierRange,
+  type VaultTier,
+} from "@/lib/itdb/vault-tiers";
+import { memberHoldings, tokenBalance } from "@/lib/server/holdings";
+import { vaultTierBalance, vaultTierNeeded } from "@/lib/server/vault-perks";
 import { ITDBVAULT_TOKEN } from "@/lib/stellar/registry";
 import { getDb, mutateDb, type VaultClaimRecord } from "@/lib/server/db";
 import { sessionAccountId } from "@/lib/server/session";
@@ -47,6 +56,22 @@ export interface MyVault {
   /** Grams per metal each month, doubled for early birds */
   monthlyMetalGrams: number;
   starterPack: typeof STARTER_PACK;
+}
+
+export type LadderTier = VaultTier & { rangeMin: number; rangeMax: number | null };
+
+export interface VaultHolding {
+  /** ITDBVAULT held on chain (null when Horizon could not be read) */
+  onChain: number | null;
+  /** Tokens allocated by this member's claim, before distribution */
+  allocated: number;
+  /** What the tier is read against */
+  counted: number;
+  /** Doubled for early birds — the 50% threshold discount */
+  tierCounted: number;
+  discounted: boolean;
+  tier: LadderTier | null;
+  next: (LadderTier & { needed: number }) | null;
 }
 
 export interface VaultSummary {
@@ -74,6 +99,8 @@ export interface VaultSummary {
   backedAssets: typeof BACKED_ASSETS;
   benefits: string[];
   milestones: Milestone[];
+  tiers: LadderTier[];
+  holding: VaultHolding;
   mine: MyVault | null;
 }
 
@@ -112,10 +139,45 @@ function mineFrom(claim: VaultClaimRecord, claimed: number): MyVault {
   };
 }
 
+const withRange = (x: VaultTier): LadderTier => {
+  const r = vaultTierRange(x);
+  return { ...x, rangeMin: r.min, rangeMax: r.max };
+};
+
+/**
+ * The holding a tier is read against.
+ *
+ * On-chain ITDBVAULT is the real measure, but the sale's tokens are not
+ * distributed yet, so a claim's allocation counts until they are. Taking
+ * the larger of the two means distribution can never drop a member's
+ * tier on the day it happens.
+ */
+function holdingFrom(
+  onChain: number | null,
+  claim: VaultClaimRecord | undefined,
+  claimed: number,
+): VaultHolding {
+  const allocated = claim ? Math.round(TOKENS_PER_VAULT * (1 + vaultTokenBonusPct(claimed) / 100)) : 0;
+  const counted = Math.max(onChain ?? 0, allocated);
+  const tierCounted = vaultTierBalance(counted, claim);
+  const tier = vaultTierFor(tierCounted);
+  const nxt = nextVaultTier(tierCounted);
+  return {
+    onChain,
+    allocated,
+    counted,
+    tierCounted,
+    discounted: tierCounted > counted,
+    tier: tier ? withRange(tier) : null,
+    next: nxt ? { ...withRange(nxt), needed: vaultTierNeeded(nxt.min, counted, tierCounted) } : null,
+  };
+}
+
 function summarise(
   claims: Record<string, VaultClaimRecord>,
   mine: VaultClaimRecord | undefined,
   now = Date.now(),
+  onChain: number | null = null,
 ): VaultSummary {
   const claimed = Object.keys(claims).length;
   return {
@@ -147,6 +209,8 @@ function summarise(
     backedAssets: BACKED_ASSETS,
     benefits: VAULT_BENEFITS,
     milestones: vaultMilestones(claimed),
+    tiers: VAULT_TIERS.map(withRange),
+    holding: holdingFrom(onChain, mine, claimed),
     mine: mine ? mineFrom(mine, claimed) : null,
   };
 }
@@ -156,7 +220,18 @@ export async function GET(req: Request) {
   const id = await sessionAccountId(req);
   if (!id) return NextResponse.json({ error: "Sign in again." }, { status: 401 });
   const db = await getDb();
-  return NextResponse.json(summarise(db.vaultClaims, db.vaultClaims[id]));
+  const account = db.accounts.find((a) => a.id === id);
+
+  // A Horizon wobble must not take the whole page down — the tier simply
+  // falls back to the allocation until the balance can be read (§6.4).
+  let onChain: number | null = null;
+  try {
+    if (account) onChain = tokenBalance(await memberHoldings(account.wallets), ITDBVAULT_TOKEN);
+  } catch {
+    onChain = null;
+  }
+
+  return NextResponse.json(summarise(db.vaultClaims, db.vaultClaims[id], Date.now(), onChain));
 }
 
 /**

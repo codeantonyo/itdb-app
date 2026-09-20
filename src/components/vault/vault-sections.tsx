@@ -1,8 +1,10 @@
 "use client";
 
-import { Check, Lock } from "lucide-react";
+import { useState } from "react";
+import { Check, ChevronRight, Lock } from "lucide-react";
 import type { VaultSummary } from "@/app/api/vault/route";
 import { SectionHeader } from "@/components/shared/section-header";
+import { Panel } from "@/components/ui/panel";
 import { formatAmount } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -167,8 +169,11 @@ export function EarlyBird({ s }: { s: VaultSummary }) {
             detail="First pick of any number from 1 to 500. Latecomers take what is left."
           />
           <Perk
-            title="50% off the holding tiers"
-            detail="Every ITDBONE and QRS tier threshold is halved on your account."
+            title="50% off the vault tiers"
+            detail={`Every ITDBVAULT tier threshold is halved — Tier 1 at ${formatAmount(
+              s.tiers[0].min / 2,
+              0,
+            )} instead of ${formatAmount(s.tiers[0].min, 0)}.`}
           />
         </div>
       </div>
@@ -242,5 +247,181 @@ export function Milestones({ s }: { s: VaultSummary }) {
         })}
       </div>
     </section>
+  );
+}
+
+const g = (n: number) => `${formatAmount(n, 0)} g`;
+
+/**
+ * The member's ITDBVAULT tier, what it pays, and the whole ladder.
+ *
+ * Amounts come straight from the tier table: weekly in three currencies,
+ * monthly metals in grams, monthly metal-backed tokens.
+ */
+export function Tiers({ s }: { s: VaultSummary }) {
+  const [open, setOpen] = useState(false);
+  const h = s.holding;
+  const t = h.tier;
+  const floor = t?.rangeMin ?? 0;
+  const ceiling = h.next?.min ?? null;
+  const pct =
+    ceiling === null
+      ? 1
+      : Math.max(0, Math.min(1, (h.tierCounted - floor) / Math.max(ceiling - floor, 1)));
+
+  return (
+    <section className="flex flex-col gap-3">
+      <SectionHeader title="Vault tiers" note={h.discounted ? "50% off — early bird" : undefined} />
+
+      <div className="surface p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="font-display flex size-11 items-center justify-center rounded-full bg-gold text-[18px] font-semibold text-gold-ink">
+              {t ? t.tier : "–"}
+            </span>
+            <div>
+              <p className="text-[16px] font-semibold text-primary">
+                {t ? `${t.medal} Tier ${t.tier}` : "Below Tier 1"}
+              </p>
+              <p className="tnum text-[13px] text-muted">
+                {formatAmount(h.counted, 0)} ITDBVAULT
+                {h.discounted && ` · counted as ${formatAmount(h.tierCounted, 0)}`}
+              </p>
+            </div>
+          </div>
+          {t && (
+            <p className="tnum text-right text-[15px] font-semibold text-gold">
+              {money(t.weekly.USD, "USD")}
+              <span className="block text-[11.5px] font-medium text-muted-2">weekly</span>
+            </p>
+          )}
+        </div>
+
+        <div className="mt-4 h-2 overflow-hidden rounded-full bg-elevated">
+          <div
+            className="h-full rounded-full bg-gold transition-[width] duration-700"
+            style={{ width: `${Math.round(pct * 100)}%` }}
+          />
+        </div>
+        <p className="tnum mt-2 text-[13px] text-muted">
+          {h.next
+            ? `${formatAmount(h.next.needed, 0)} ITDBVAULT more for ${h.next.medal} Tier ${h.next.tier}`
+            : t
+              ? "Top tier reached"
+              : `${formatAmount(s.tiers[0].min, 0)} ITDBVAULT opens Tier 1`}
+        </p>
+
+        {h.allocated > 0 && h.onChain !== null && h.onChain < h.allocated && (
+          <p className="mt-2 text-[12.5px] leading-relaxed text-muted-2">
+            Counted from your vault allocation until the sale&rsquo;s tokens are distributed on chain.
+          </p>
+        )}
+
+        {t && <TierDetail t={t} />}
+
+        <button
+          onClick={() => setOpen(true)}
+          className="tap mt-3 flex w-full items-center justify-between text-[14px] font-semibold text-gold"
+        >
+          View all {s.tiers.length} tiers
+          <ChevronRight className="size-4" />
+        </button>
+      </div>
+
+      <Panel open={open} title="ITDBVAULT tiers" onClose={() => setOpen(false)}>
+        <div className="flex flex-col divide-y divide-hairline">
+          {s.tiers.map((x) => {
+            const yours = t?.tier === x.tier;
+            return (
+              <div key={x.tier} className={cn("py-3", yours && "-mx-2 rounded-xl bg-gold-soft px-2")}>
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="text-[15px] font-semibold text-primary">
+                    {x.medal} Tier {x.tier}
+                    {yours && (
+                      <span className="ml-2 text-[11px] font-semibold uppercase tracking-wide text-gold">
+                        Yours
+                      </span>
+                    )}
+                  </p>
+                  <p className="tnum text-[14px] font-semibold text-gold">
+                    {money(x.weekly.USD, "USD")} / wk
+                  </p>
+                </div>
+                <p className="tnum text-[12.5px] text-muted">
+                  {formatAmount(x.rangeMin, 0)}
+                  {x.rangeMax === null ? "+" : ` – ${formatAmount(x.rangeMax, 0)}`} ITDBVAULT
+                </p>
+                <p className="tnum text-[12.5px] text-muted-2">
+                  {x.vaults} vault{x.vaults > 1 ? "s" : ""} · {x.metalsStored} metals · {x.burnPct}% burn
+                  · ~${formatAmount(x.estMonthlyUsd / 1_000_000, 2)}M a month
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </Panel>
+    </section>
+  );
+}
+
+function TierDetail({ t }: { t: VaultSummary["tiers"][number] }) {
+  return (
+    <div className="mt-4 border-t border-hairline pt-4">
+      <p className="label">Weekly currency</p>
+      <p className="tnum mt-1 text-[13.5px] text-primary">
+        {money(t.weekly.USD, "USD")} · {money(t.weekly.EUR, "EUR")} · {money(t.weekly.GBP, "GBP")}
+      </p>
+
+      <p className="label mt-4">Monthly metals</p>
+      <div className="mt-1 flex flex-wrap gap-1.5">
+        {t.metals.map((m) => (
+          <span
+            key={m.metal}
+            className="tnum rounded-md bg-elevated px-2 py-1 text-[12px] text-primary"
+          >
+            {g(m.grams)} {m.metal}
+          </span>
+        ))}
+      </div>
+
+      <p className="label mt-4">Monthly metal-backed tokens</p>
+      <div className="mt-1">
+        {t.tokens.map((x) => (
+          <div
+            key={x.code}
+            className="flex items-center justify-between border-t border-hairline py-2 first:border-t-0"
+          >
+            <span className="text-[14px] font-semibold text-primary">{x.code}</span>
+            <span className="tnum text-[13px] text-muted">
+              {formatAmount(x.amount, 0)} · {x.metal}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <p className="label mt-4">Ownership and benefits</p>
+      <ul className="mt-1 flex flex-col gap-1.5">
+        <li className="flex items-start gap-2 text-[13.5px] text-primary">
+          <Check className="mt-0.5 size-3.5 shrink-0 text-gold" strokeWidth={3} />
+          {t.vaults} vault{t.vaults > 1 ? "s" : ""} — any{" "}
+          {t.vaults === 1 ? "city" : "cities, or all in one"}
+        </li>
+        <li className="flex items-start gap-2 text-[13.5px] text-primary">
+          <Check className="mt-0.5 size-3.5 shrink-0 text-gold" strokeWidth={3} />
+          {t.metalsStored} metals stored
+        </li>
+        {t.benefits.map((b) => (
+          <li key={b} className="flex items-start gap-2 text-[13.5px] text-primary">
+            <Check className="mt-0.5 size-3.5 shrink-0 text-gold" strokeWidth={3} />
+            {b}
+          </li>
+        ))}
+      </ul>
+
+      <p className="tnum mt-3 text-[12.5px] text-muted-2">
+        {t.burnPct}% burn on every transaction · indicative ~$
+        {formatAmount(t.estMonthlyUsd / 1_000_000, 2)}M a month
+      </p>
+    </div>
   );
 }

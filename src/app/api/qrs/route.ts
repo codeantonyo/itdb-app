@@ -17,7 +17,6 @@ import {
 import { computeYield, programInputs, type YieldComputed } from "@/lib/server/accrual";
 import { milestonesFor, type Milestone } from "@/lib/itdb/milestones";
 import { earlyBirdMultiplier } from "@/lib/itdb/early-birds";
-import { vaultTierBalance, vaultTierNeeded } from "@/lib/server/vault-perks";
 import { getDb } from "@/lib/server/db";
 import { getFx, type PriceSource } from "@/lib/server/fx";
 import { presaleView, type PresaleBonusView } from "@/lib/server/presale";
@@ -157,10 +156,8 @@ export async function GET(req: Request) {
     inputs.holders,
   );
 
-  // Vault early birds take 50% off the tier thresholds.
-  const tierBalance = vaultTierBalance(inputs.balance, db.vaultClaims[id]);
-  const tier = qrsTierFor(tierBalance);
-  const nxt = nextQrsTier(tierBalance);
+  const tier = qrsTierFor(inputs.balance);
+  const nxt = nextQrsTier(inputs.balance);
 
   // Gold follows the holding, not the tier: 100 g per QRS, always.
   const goldKg = qrsGoldKg(inputs.balance);
@@ -189,12 +186,12 @@ export async function GET(req: Request) {
     marketUrl: marketUrl(QRS_TOKEN),
     balance: inputs.balance,
     tier,
-    next: nxt ? { ...nxt, needed: vaultTierNeeded(nxt.min, inputs.balance, tierBalance) } : null,
+    next: nxt ? { ...nxt, needed: Math.max(nxt.min - inputs.balance, 0) } : null,
     milestones: [...bonusMilestone(bonus), ...presaleMilestones(presale), ...milestonesFor("QRS")],
     presale,
     bonus,
     backingUsd: qrsGoldBackingUsd(fx.metalUsdPerKg("gold")),
-    yield: computeYield("qrs", inputs.balance, inputs.since, db.qrs[id], fx, earlyBirdMultiplier(account.wallets), undefined, tierBalance),
+    yield: computeYield("qrs", inputs.balance, inputs.since, db.qrs[id], fx, earlyBirdMultiplier(account.wallets)),
     gold,
     metals,
     reservesUsd: gold.valueUsd + metals.reduce((s, m) => s + m.valueUsd, 0),

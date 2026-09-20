@@ -12,7 +12,6 @@ import {
 import { computeYield, programInputs, type YieldComputed } from "@/lib/server/accrual";
 import { milestonesFor, type Milestone } from "@/lib/itdb/milestones";
 import { earlyBirdMultiplier } from "@/lib/itdb/early-birds";
-import { vaultTierBalance, vaultTierNeeded } from "@/lib/server/vault-perks";
 import { getDb } from "@/lib/server/db";
 import { getFx } from "@/lib/server/fx";
 import { sessionAccountId } from "@/lib/server/session";
@@ -60,22 +59,17 @@ export async function GET(req: Request) {
     );
   }
 
-  // Vault early birds take 50% off the tier thresholds.
-  const tierBalance = vaultTierBalance(inputs.balance, db.vaultClaims[id]);
-  const tier = itdboneTierFor(tierBalance);
-  const nxt = nextItdboneTier(tierBalance);
+  const tier = itdboneTierFor(inputs.balance);
+  const nxt = nextItdboneTier(inputs.balance);
   const summary: ItdboneSummary = {
     token: ITDBONE_TOKEN,
     marketUrl: marketUrl(ITDBONE_TOKEN),
     tier: tier ? withRange(tier) : null,
     next: nxt
-      ? {
-          ...withRange(nxt),
-          needed: vaultTierNeeded(itdboneRange(nxt).min, inputs.balance, tierBalance),
-        }
+      ? { ...withRange(nxt), needed: Math.max(itdboneRange(nxt).min - inputs.balance, 0) }
       : null,
     milestones: milestonesFor("ITDBONE"),
-    yield: computeYield("itdbone", inputs.balance, inputs.since, db.itdbone[id], fx, earlyBirdMultiplier(account.wallets), undefined, tierBalance),
+    yield: computeYield("itdbone", inputs.balance, inputs.since, db.itdbone[id], fx, earlyBirdMultiplier(account.wallets)),
     tiers: ITDBONE_TIERS.map(withRange),
   };
   return NextResponse.json(summary);

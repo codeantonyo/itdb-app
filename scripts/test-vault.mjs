@@ -76,7 +76,42 @@ assert.equal(needed(2500, 1000, 1000), 1500, "no discount: the plain shortfall")
 assert.equal(needed(2500, 1000, 2000), 250, "50% off: 250 real tokens, not 1500");
 assert.equal(needed(2500, 2000, 4000), 0, "already past it");
 
+// --- the ITDBVAULT ladder --------------------------------------------
+const tiers = readFileSync("src/lib/itdb/vault-tiers.ts", "utf8");
+const mins = [...tiers.matchAll(/^  t\((\d+), "[^"]+", ([\d_]+),/gm)].map((m) => ({
+  tier: +m[1],
+  min: Number(m[2].replace(/_/g, "")),
+}));
+assert.equal(mins.length, 10, "ten vault tiers");
+assert.deepEqual(
+  mins.map((x) => x.min),
+  [2_000, 4_000, 8_000, 16_000, 32_000, 64_000, 128_000, 256_000, 512_000, 1_000_000],
+  "thresholds match the published table",
+);
+assert.ok(
+  mins.every((x, i) => i === 0 || x.min > mins[i - 1].min),
+  "thresholds only ever rise, so every tier is reachable",
+);
+// Tier 1 opens at exactly one vault's allocation, Tier 10 at the supply.
+assert.equal(mins[0].min, supply / TOTAL, "Tier 1 == one vault of tokens");
+assert.equal(mins[9].min, supply, "Tier 10 == the whole supply");
+
+const tierFor = (b) => (b > 0 ? [...mins].reverse().find((x) => b >= x.min) ?? null : null);
+assert.equal(tierFor(0), null, "no holding, no tier");
+assert.equal(tierFor(1_999), null, "just under Tier 1 is still nothing");
+assert.equal(tierFor(2_000).tier, 1);
+assert.equal(tierFor(3_999).tier, 1, "the top of Tier 1 is still Tier 1");
+assert.equal(tierFor(4_000).tier, 2);
+assert.equal(tierFor(1_000_000).tier, 10);
+assert.equal(tierFor(9_999_999).tier, 10, "above the top stays at the top");
+
+// The early-bird discount halves thresholds == reading at twice the holding.
+const DIVISOR = 2;
+assert.equal(tierFor(1_000 * DIVISOR).tier, 1, "an early bird reaches Tier 1 at 1,000");
+assert.equal(tierFor(2_000 * DIVISOR).tier, 2, "and Tier 2 at 2,000");
+assert.equal(needed(4_000, 1_000, 2_000), 1_000, "50% off: 1,000 real tokens to Tier 2");
+
 console.log(
   `ok — ${cities.length} branches x ${PER_CITY}, ${supply.toLocaleString("en-US")} tokens, ` +
-    `stages clamp, numbers unique, tier discount scales`,
+    `${mins.length} tiers, stages clamp, numbers unique, tier discount scales`,
 );
