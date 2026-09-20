@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { TOTAL_VAULTS, cityForClaim } from "@/lib/itdb/vault";
+import {
+  TOTAL_VAULTS,
+  VAULTS_PER_CITY,
+  VAULT_CITY_NAMES,
+  cityForClaim,
+  remainingByCity,
+} from "@/lib/itdb/vault";
 import { ITDBVAULT_TOKEN } from "@/lib/stellar/registry";
 import { getDb, mutateDb, type VaultClaimRecord } from "@/lib/server/db";
 import { sessionAccountId } from "@/lib/server/session";
@@ -9,9 +15,19 @@ export interface VaultSummary {
   total: number;
   claimed: number;
   available: number;
+  perCity: number;
+  /** Vaults still free in each city */
+  remaining: Record<string, number>;
   /** This member's vault, or null if they have not claimed one */
   mine: VaultClaimRecord | null;
 }
+
+/** How many vaults each city has given out. */
+const takenByCity = (claims: Record<string, VaultClaimRecord>): Record<string, number> => {
+  const taken: Record<string, number> = {};
+  for (const c of Object.values(claims)) taken[c.city] = (taken[c.city] ?? 0) + 1;
+  return taken;
+};
 
 const summarise = (
   claims: Record<string, VaultClaimRecord>,
@@ -23,6 +39,8 @@ const summarise = (
     total: TOTAL_VAULTS,
     claimed,
     available: Math.max(TOTAL_VAULTS - claimed, 0),
+    perCity: VAULTS_PER_CITY,
+    remaining: remainingByCity(takenByCity(claims)),
     mine: mine ?? null,
   };
 };
@@ -36,11 +54,12 @@ export async function GET(req: Request) {
 }
 
 /**
- * POST /api/vault — claim one vault.
+ * POST /api/vault — claim one vault, in the city the member picked.
  *
- * The count is recomputed inside the mutation, so two people claiming
- * the last vault at once cannot both get it, and a member who already
- * holds one is handed theirs back rather than issued a second.
+ * The city is validated against the real list and its remaining count is
+ * recomputed inside the mutation, so a city cannot be talked past its
+ * fifty by a stale page or two people claiming its last vault at once.
+ * Omitting the city falls back to round-robin.
  */
 export async function POST(req: Request) {
   const id = await sessionAccountId(req);
@@ -50,16 +69,34 @@ export async function POST(req: Request) {
   if (!db.accounts.some((a) => a.id === id))
     return NextResponse.json({ error: "Account not found" }, { status: 404 });
 
+  let wanted: string | undefined;
+  try {
+    const body = (await req.json()) as { city?: unknown };
+    if (typeof body?.city === "string") wanted = body.city;
+  } catch {
+    // No body is fine — the member gets the next city in rotation.
+  }
+  if (wanted !== undefined && !VAULT_CITY_NAMES.includes(wanted))
+    return NextResponse.json({ error: "That is not one of our vault cities." }, { status: 400 });
+
   const result = await mutateDb((store) => {
     const existing = store.vaultClaims[id];
     if (existing) return { ok: true as const, summary: summarise(store.vaultClaims, existing) };
 
     const index = Object.keys(store.vaultClaims).length;
-    if (index >= TOTAL_VAULTS) {
+    if (index >= TOTAL_VAULTS)
       return { ok: false as const, error: "Every vault has been claimed.", status: 409 };
-    }
 
-    const record: VaultClaimRecord = { at: Date.now(), city: cityForClaim(index), index };
+    const city = wanted ?? cityForClaim(index);
+    const remaining = remainingByCity(takenByCity(store.vaultClaims))[city] ?? 0;
+    if (remaining <= 0)
+      return {
+        ok: false as const,
+        error: `${city} is fully claimed — choose another city.`,
+        status: 409,
+      };
+
+    const record: VaultClaimRecord = { at: Date.now(), city, index };
     store.vaultClaims[id] = record;
     return { ok: true as const, summary: summarise(store.vaultClaims, record) };
   });

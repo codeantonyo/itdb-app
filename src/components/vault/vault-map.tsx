@@ -65,7 +65,21 @@ function arc(from: string, to: string): string {
 
 const pct = (v: number, of: number) => `${(v / of) * 100}%`;
 
-export function VaultMap({ className }: { className?: string }) {
+interface VaultMapProps {
+  className?: string;
+  /** Vaults left per city; omit while loading and every pin reads ACTIVE */
+  remaining?: Record<string, number>;
+  selected?: string | null;
+  onSelect?: (city: string) => void;
+}
+
+export function VaultMap({ className, remaining, selected, onSelect }: VaultMapProps) {
+  const left = (city: string) => remaining?.[city];
+  const full = (city: string) => left(city) === 0;
+  const pick = (city: string) => {
+    if (onSelect && !full(city)) onSelect(city);
+  };
+
   return (
     <div className={`relative ${className ?? ""}`}>
       <svg
@@ -121,31 +135,59 @@ export function VaultMap({ className }: { className?: string }) {
 
         <g className="vault-pins">
           {VAULT_PINS.map((p, i) => (
-            <g key={p.city} style={{ ["--d" as string]: `${i * 0.38}s` }}>
+            <g
+              key={p.city}
+              data-selected={selected === p.city || undefined}
+              data-full={full(p.city) || undefined}
+              style={{ ["--d" as string]: `${i * 0.38}s` }}
+            >
               <circle cx={p.x} cy={p.y} r="17" fill="url(#vault-glow)" className="vault-halo" />
               <circle cx={p.x} cy={p.y} r="6.5" className="vault-ring" />
               <circle cx={p.x} cy={p.y} r="2.6" className="vault-core" />
+              {/* Tapping the pin itself works as well as tapping its name.
+                  The name carries the accessible label, so this is hidden. */}
+              {onSelect && (
+                <circle
+                  cx={p.x}
+                  cy={p.y}
+                  r="15"
+                  className="vault-hit"
+                  onClick={() => pick(p.city)}
+                  aria-hidden="true"
+                />
+              )}
             </g>
           ))}
         </g>
       </svg>
 
-      {/* Labels ride above the map so their text size never scales down. */}
-      <div className="vault-labels" aria-hidden="true">
+      {/* Labels ride above the map so their text size never scales down.
+          Each is the city's button — the name is its accessible label. */}
+      <div className="vault-labels">
         {VAULT_PINS.map((p) => {
           const l = LABELS[p.city];
+          const n = left(p.city);
+          const isFull = n === 0;
+          const label = n === undefined ? "ACTIVE" : isFull ? "FULL" : `${n} LEFT`;
+          const Tag = onSelect ? "button" : "span";
           return (
-            <span
+            <Tag
               key={p.city}
+              type={onSelect ? "button" : undefined}
               className="vault-label"
               data-side={l.side}
+              data-selected={selected === p.city || undefined}
+              data-full={isFull || undefined}
+              disabled={onSelect ? isFull : undefined}
+              aria-pressed={onSelect ? selected === p.city : undefined}
+              onClick={onSelect ? () => pick(p.city) : undefined}
               style={{ left: pct(l.x, MAP_WIDTH), top: pct(l.y, MAP_HEIGHT) }}
             >
               <b>{p.city}</b>
               <i>
-                <s /> ACTIVE
+                <s /> {label}
               </i>
-            </span>
+            </Tag>
           );
         })}
       </div>

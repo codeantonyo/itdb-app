@@ -437,6 +437,28 @@ select option {
   line-height: 1.1;
   white-space: nowrap;
   transform: translateY(-50%);
+  /* Labels are the tap target for picking a city, so they take pointer
+     events back from the layer and carry a finger-sized hit area. */
+  pointer-events: auto;
+  padding: 5px 4px;
+  margin: -5px -4px;
+  border: 0;
+  background: none;
+  text-align: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.vault-label:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.vault-label[data-selected] {
+  background: color-mix(in srgb, var(--m-gold) 16%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--m-gold) 55%, transparent);
+}
+.vault-label:focus-visible {
+  outline: 2px solid var(--m-gold-light);
+  outline-offset: 1px;
 }
 .vault-label[data-side="left"] {
   align-items: flex-end;
@@ -462,8 +484,35 @@ select option {
   width: 3px;
   height: 3px;
   border-radius: 9999px;
-  background: var(--m-success, #3ec98a);
+  background: var(--m-success);
   box-shadow: 0 0 4px currentColor;
+}
+.vault-label[data-full] s {
+  background: var(--m-muted-2, #7a879c);
+  box-shadow: none;
+}
+
+/* Invisible tap target over the pin — the label holds the real name. */
+.vault-hit {
+  fill: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+/* The chosen city reads brighter and sits a touch larger. */
+.vault-pins [data-selected] .vault-core {
+  r: 3.6;
+}
+.vault-pins [data-selected] .vault-ring {
+  stroke-width: 1.8;
+  stroke: var(--m-gold-light);
+}
+.vault-pins [data-full] {
+  opacity: 0.4;
+}
+.vault-pins [data-full] .vault-ring,
+.vault-pins [data-full] .vault-halo {
+  animation: none;
 }
 
 /* Gold dust drifting over the map. */

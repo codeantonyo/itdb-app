@@ -34,4 +34,26 @@ assert.equal(xs.length, 10);
 assert.ok(xs.every((x) => x > 0 && x < 800), "pins inside the width");
 assert.ok(ys.every((y) => y > 0 && y < 420), "pins inside the height");
 
-console.log(`ok — ${cities.length} cities, ${TOTAL} vaults split ${TOTAL / 10} each, pins on-map`);
+// Per-city capacity: a city must fill up and stop, and must never report
+// a negative count however many claims land on it.
+const PER_CITY = TOTAL / cities.length;
+const remaining = (taken) =>
+  Object.fromEntries(cities.map((c) => [c, Math.max(PER_CITY - (taken[c] ?? 0), 0)]));
+
+assert.equal(remaining({})["Dubai"], PER_CITY, "an untouched city is full of vaults");
+assert.equal(remaining({ Dubai: 1 })["Dubai"], PER_CITY - 1);
+assert.equal(remaining({ Dubai: PER_CITY })["Dubai"], 0, "a full city offers nothing");
+assert.equal(remaining({ Dubai: PER_CITY + 9 })["Dubai"], 0, "over-claim clamps at zero");
+// Choosing one city must not touch another's count.
+assert.equal(remaining({ Dubai: PER_CITY })["London"], PER_CITY);
+// The cities together still add up to the headline number.
+assert.equal(
+  Object.values(remaining({})).reduce((a, b) => a + b, 0),
+  TOTAL,
+  "city capacities sum to the total",
+);
+
+console.log(
+  `ok — ${cities.length} cities, ${TOTAL} vaults at ${PER_CITY} each, ` +
+    `capacity clamps, pins on-map`,
+);

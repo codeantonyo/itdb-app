@@ -46,18 +46,33 @@ export default function VaultPage() {
   const vault = useJson<VaultSummary>("/api/vault", 30_000);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
 
   const s = vault.data;
   const available = useCountTo(s?.available ?? null);
 
+  // Derived, so a city that fills up while the page is open stops being
+  // the selection rather than failing at the moment of claiming.
+  const city = picked && (s?.remaining[picked] ?? 0) > 0 ? picked : null;
+
   const claim = async () => {
+    if (!city) return;
     setBusy(true);
     setError(null);
     try {
-      const r = await fetch("/api/vault", { method: "POST" });
+      const r = await fetch("/api/vault", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ city }),
+      });
       const data = (await r.json()) as VaultSummary & { error?: string };
-      if (r.ok) vault.refresh();
-      else setError(data.error ?? "That did not work.");
+      if (r.ok) {
+        setPicked(null);
+        vault.refresh();
+      } else {
+        setError(data.error ?? "That did not work.");
+        vault.refresh(); // a rejection usually means the counts moved
+      }
     } catch {
       setError("Network error — try again.");
     } finally {
@@ -97,7 +112,12 @@ export default function VaultPage() {
             </p>
           </div>
 
-          <VaultMap className="mt-3" />
+          <VaultMap
+            className="mt-3"
+            remaining={s?.remaining}
+            selected={city}
+            onSelect={claimed ? undefined : (c) => setPicked((prev) => (prev === c ? null : c))}
+          />
         </div>
       </section>
 
@@ -124,15 +144,28 @@ export default function VaultPage() {
             </div>
           </section>
         ) : (
-          <button
-            onClick={claim}
-            disabled={busy || s.available === 0}
-            className="vault-cta cta flex h-[56px] w-full items-center justify-center rounded-2xl text-[15.5px] font-bold uppercase tracking-[0.14em] disabled:opacity-60"
-          >
-            <span className="relative z-[2]">
-              {busy ? "Claiming…" : s.available === 0 ? "All vaults claimed" : "Claim your vault"}
-            </span>
-          </button>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={claim}
+              disabled={busy || !city || s.available === 0}
+              className="vault-cta cta flex h-[56px] w-full items-center justify-center rounded-2xl text-[15.5px] font-bold uppercase tracking-[0.14em] disabled:opacity-60"
+            >
+              <span className="relative z-[2]">
+                {busy
+                  ? "Claiming…"
+                  : s.available === 0
+                    ? "All vaults claimed"
+                    : city
+                      ? `Claim your vault in ${city}`
+                      : "Choose a city on the map"}
+              </span>
+            </button>
+            <p className="text-center text-[12.5px] text-muted-2">
+              {city
+                ? `${formatAmount(s.remaining[city] ?? 0, 0)} of ${formatAmount(s.perCity, 0)} left in ${city}`
+                : "Tap any glowing pin to pick where your vault is held"}
+            </p>
+          </div>
         )
       ) : (
         <Skeleton className="h-[56px] rounded-2xl" />
@@ -143,8 +176,8 @@ export default function VaultPage() {
       )}
 
       <p className="px-1 text-[12.5px] leading-relaxed text-muted-2">
-        Each vault is one of {formatAmount(s?.total ?? 500, 0)} on the ITDBVAULT network, assigned to a city as it is
-        claimed. One vault per account.
+        {formatAmount(s?.total ?? 500, 0)} vaults on the ITDBVAULT network, {formatAmount(s?.perCity ?? 50, 0)} in each
+        of the ten cities. Pick the city you want; one vault per account.
       </p>
     </div>
   );

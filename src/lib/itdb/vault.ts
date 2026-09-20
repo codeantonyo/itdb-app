@@ -12,7 +12,19 @@ export const TOTAL_VAULTS = 500;
 
 export const VAULT_CITIES = VAULT_PINS;
 
-/** Cities are assigned round-robin, so every location fills evenly. */
+/** The 500 vaults are split evenly, so each city holds this many. */
+export const VAULTS_PER_CITY = TOTAL_VAULTS / VAULT_PINS.length;
+
+export const VAULT_CITY_NAMES = VAULT_PINS.map((p) => p.city);
+
+/** Members pick their city; this is only the fallback when none is sent. */
 export function cityForClaim(index: number): string {
   return VAULT_PINS[index % VAULT_PINS.length].city;
+}
+
+/** Remaining vaults per city, from the claims on record. */
+export function remainingByCity(taken: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(
+    VAULT_CITY_NAMES.map((c) => [c, Math.max(VAULTS_PER_CITY - (taken[c] ?? 0), 0)]),
+  );
 }
