@@ -6,6 +6,13 @@ import type { VaultSummary } from "@/app/api/vault/route";
 import { AppBar } from "@/components/layout/app-bar";
 import { NetworkNotice } from "@/components/shared/network-notice";
 import { GoldDust, VaultMap } from "@/components/vault/vault-map";
+import {
+  Branches,
+  EarlyBird,
+  Milestones,
+  WhatItHolds,
+  WhatYouReceive,
+} from "@/components/vault/vault-sections";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJson } from "@/lib/client/use-json";
 import { formatAmount } from "@/lib/format";
@@ -47,6 +54,7 @@ export default function VaultPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
+  const [wantedNumber, setWantedNumber] = useState("");
 
   const s = vault.data;
   const available = useCountTo(s?.available ?? null);
@@ -54,6 +62,14 @@ export default function VaultPage() {
   // Derived, so a city that fills up while the page is open stops being
   // the selection rather than failing at the moment of claiming.
   const city = picked && (s?.remaining[picked] ?? 0) > 0 ? picked : null;
+
+  // Choosing a number is an early-bird privilege; the field only shows
+  // while the window is open, and only a free number is ever sent.
+  const taken = new Set(s?.takenNumbers ?? []);
+  const parsed = Number.parseInt(wantedNumber, 10);
+  const numberValid =
+    Number.isInteger(parsed) && parsed >= 1 && parsed <= (s?.total ?? 500) && !taken.has(parsed);
+  const numberWanted = numberValid ? parsed : null;
 
   const claim = async () => {
     if (!city) return;
@@ -63,11 +79,12 @@ export default function VaultPage() {
       const r = await fetch("/api/vault", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ city }),
+        body: JSON.stringify({ city, ...(numberWanted ? { number: numberWanted } : {}) }),
       });
       const data = (await r.json()) as VaultSummary & { error?: string };
       if (r.ok) {
         setPicked(null);
+        setWantedNumber("");
         vault.refresh();
       } else {
         setError(data.error ?? "That did not work.");
@@ -125,22 +142,47 @@ export default function VaultPage() {
 
       {s ? (
         claimed ? (
-          <section className="surface flex items-center gap-3.5 p-4">
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-success-soft text-success">
-              <ShieldCheck className="size-[21px]" strokeWidth={1.9} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-[15.5px] font-semibold text-primary">
-                Vault #{s.mine!.index + 1} — {s.mine!.city}
-              </p>
-              <p className="text-[13px] text-muted">
-                Claimed{" "}
-                {new Date(s.mine!.at).toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })}
-              </p>
+          <section className="surface p-5">
+            <div className="flex items-center gap-3.5">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-success-soft text-success">
+                <ShieldCheck className="size-[21px]" strokeWidth={1.9} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[15.5px] font-semibold text-primary">
+                  Vault #{s.mine!.number} — {s.mine!.city}
+                </p>
+                <p className="text-[13px] text-muted">
+                  Claimed{" "}
+                  {new Date(s.mine!.at).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                  {s.mine!.earlyBird && " · Early bird"}
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-elevated px-3.5 py-3">
+                <p className="text-[12px] text-muted">ITDBVAULT</p>
+                <p className="tnum mt-0.5 text-[17px] font-semibold text-gold">
+                  {formatAmount(s.mine!.tokens, 0)}
+                </p>
+                {s.mine!.tokens > s.mine!.baseTokens && (
+                  <p className="tnum text-[12px] text-muted-2">
+                    {formatAmount(s.mine!.baseTokens, 0)} +{formatAmount(s.economics.bonusPct, 0)}%
+                  </p>
+                )}
+              </div>
+              <div className="rounded-2xl bg-elevated px-3.5 py-3">
+                <p className="text-[12px] text-muted">{s.mine!.earlyBird ? "XLM refund" : "Paid"}</p>
+                <p className="tnum mt-0.5 text-[17px] font-semibold text-gold">
+                  {formatAmount(s.mine!.earlyBird ? s.mine!.refundXlm : s.mine!.xlmPaid, 0)} XLM
+                </p>
+                <p className="tnum text-[12px] text-muted-2">
+                  of {formatAmount(s.mine!.xlmPaid, 0)} XLM
+                </p>
+              </div>
             </div>
           </section>
         ) : (
@@ -165,6 +207,34 @@ export default function VaultPage() {
                 ? `${formatAmount(s.remaining[city] ?? 0, 0)} of ${formatAmount(s.perCity, 0)} left in ${city}`
                 : "Tap any glowing pin to pick where your vault is held"}
             </p>
+
+            {s.earlyBird.open && (
+              <label className="surface flex items-center gap-3 p-3.5">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[14px] font-semibold text-primary">
+                    Preferred vault number
+                  </span>
+                  <span className="block text-[12.5px] text-muted">
+                    {wantedNumber === ""
+                      ? `Early birds pick any free number, 1 to ${formatAmount(s.total, 0)}`
+                      : numberValid
+                        ? `#${numberWanted} is free — it is yours`
+                        : taken.has(parsed)
+                          ? `#${parsed} is already owned`
+                          : `Pick a number between 1 and ${formatAmount(s.total, 0)}`}
+                  </span>
+                </span>
+                <input
+                  value={wantedNumber}
+                  onChange={(e) => setWantedNumber(e.target.value.replace(/[^0-9]/g, "").slice(0, 3))}
+                  inputMode="numeric"
+                  placeholder="001"
+                  aria-label="Preferred vault number"
+                  aria-invalid={wantedNumber !== "" && !numberValid}
+                  className="tnum inset w-[72px] shrink-0 bg-transparent px-3 py-2 text-center text-[16px] font-semibold text-primary outline-none"
+                />
+              </label>
+            )}
           </div>
         )
       ) : (
@@ -175,9 +245,23 @@ export default function VaultPage() {
         <p className="rounded-xl bg-danger-soft px-3.5 py-3 text-[13.5px] text-danger">{error}</p>
       )}
 
+      {s && (
+        <>
+          <EarlyBird s={s} />
+          <Milestones s={s} />
+          <WhatItHolds s={s} />
+          <WhatYouReceive s={s} />
+          <Branches s={s} />
+        </>
+      )}
+
       <p className="px-1 text-[12.5px] leading-relaxed text-muted-2">
-        {formatAmount(s?.total ?? 500, 0)} vaults on the ITDBVAULT network, {formatAmount(s?.perCity ?? 50, 0)} in each
-        of the ten cities. Pick the city you want; one vault per account.
+        {formatAmount(s?.total ?? 500, 0)} vaults, {formatAmount(s?.perCity ?? 50, 0)} in each of the ten branches, at{" "}
+        {formatAmount(s?.economics.xlmPerVault ?? 200, 0)} XLM each out of a{" "}
+        {formatAmount(s?.economics.saleXlm ?? 100_000, 0)} XLM sale. One vault per account.{" "}
+        <span className="font-semibold text-muted">
+          Every figure here is simulated — no metal is allocated and no unit is reserved.
+        </span>
       </p>
     </div>
   );

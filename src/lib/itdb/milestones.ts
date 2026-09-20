@@ -19,7 +19,7 @@
  * each one is waiting on.
  */
 
-export type TokenCode = "ITDB" | "ITDBONE" | "QRS";
+export type TokenCode = "ITDB" | "ITDBONE" | "QRS" | "ITDBVAULT";
 
 export type MilestoneStatus =
   /** Reached and applying now */
@@ -180,6 +180,9 @@ const BY_TOKEN: Record<TokenCode, Milestone[]> = {
   ITDB: ITDB_MILESTONES,
   ITDBONE: ITDBONE_MILESTONES,
   QRS: QRS_MILESTONES,
+  // ITDBVAULT's stages are derived from vaults actually sold, so they
+  // are built by vaultMilestones() rather than declared here.
+  ITDBVAULT: [],
 };
 
 /** Every milestone for one token, in the order members should read them. */

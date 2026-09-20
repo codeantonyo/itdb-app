@@ -132,9 +132,16 @@ export function computeYield(
   /** x10 for an early-bird account; applied on top of the milestone */
   accountMultiplier = 1,
   now = Date.now(),
+  /**
+   * Balance the TIER is read at, when it differs from the balance held —
+   * a vault early bird takes 50% off the thresholds, which is the same
+   * as reading their tier at twice their balance. Kept separate so the
+   * discount never leaks into the figure shown as "you hold".
+   */
+  tierBalance = balance,
 ): YieldComputed {
   const def = PROGRAMS[program];
-  const ladder = def.ladder(balance);
+  const ladder = def.ladder(tierBalance);
   const lastCollectedAt = record?.collectedAt ?? 0;
   const from = Math.max(since ?? 0, lastCollectedAt);
   const daysAccrued = ladder && from > 0 ? Math.max(0, (now - from) / DAY_MS) : 0;

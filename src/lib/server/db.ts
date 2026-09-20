@@ -183,8 +183,14 @@ export interface QrsBonusRecord {
 export interface VaultClaimRecord {
   at: number;
   city: string;
-  /** Claim order, 0-based — decides the city and the vault number */
+  /** Claim order, 0-based */
   index: number;
+  /**
+   * The vault number, 1-500. Early birds choose it; everyone else gets
+   * the lowest free one. Optional only for claims written before
+   * numbers existed — read it as `number ?? index + 1`.
+   */
+  number?: number;
 }
 
 export type OtpPurpose = "signup" | "reset" | "change_email";
