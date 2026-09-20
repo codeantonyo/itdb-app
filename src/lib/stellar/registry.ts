@@ -1,5 +1,5 @@
 /**
- * Curated token registry — the three Stellar assets ITDB displays.
+ * Curated token registry — the Stellar assets ITDB displays.
  * Metadata, prices and charts resolve automatically from Horizon + each
  * issuer's stellar.toml (SEP-1) with a StellarExpert fallback. Nothing
  * about price, logo or domain is hard-coded.
@@ -30,10 +30,17 @@ export const QRS_TOKEN: RegistryToken = {
   expectedDomain: "itdb-qrs.com",
 };
 
+export const ITDBVAULT_TOKEN: RegistryToken = {
+  code: "ITDBVAULT",
+  issuer: "GBBA6ZFTOKUJKTXLXJSV26YWWCMGLHP5R2UREFBLV25HJTWEC3YYJVLT",
+  expectedDomain: "itdb-qfs.org",
+};
+
 export const TOKEN_REGISTRY: RegistryToken[] = [
   ITDB_TOKEN,
   ITDBONE_TOKEN,
   QRS_TOKEN,
+  ITDBVAULT_TOKEN,
 ];
 
 export const marketUrl = (t: { code: string; issuer: string }) =>

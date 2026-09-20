@@ -344,3 +344,208 @@ select option {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* ------------------------------------------------------------------ */
+/*  ITDBVAULT — the global vault map                                   */
+/* ------------------------------------------------------------------ */
+
+.vault-map {
+  overflow: visible;
+}
+
+/* Countries: filled faintly so borders read without shouting. */
+.vault-land path {
+  fill: color-mix(in srgb, var(--m-gold) 7%, transparent);
+  stroke: color-mix(in srgb, var(--m-gold) 32%, transparent);
+  stroke-width: 0.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.vault-routes path {
+  fill: none;
+  stroke: url(#vault-route);
+  stroke-width: 0.7;
+  vector-effect: non-scaling-stroke;
+}
+
+.vault-spark {
+  fill: var(--m-gold-light);
+  filter: drop-shadow(0 0 3px var(--m-gold));
+}
+
+/* The pin: a still core, a breathing ring, a slow halo. Only opacity
+   and transform animate, so this stays on the compositor. */
+.vault-core {
+  fill: var(--m-gold-light);
+}
+.vault-ring {
+  fill: none;
+  stroke: var(--m-gold);
+  stroke-width: 1.1;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: vault-pulse 2.8s var(--ease, ease-in-out) infinite;
+  animation-delay: var(--d, 0s);
+}
+.vault-halo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: vault-breathe 2.8s ease-in-out infinite;
+  animation-delay: var(--d, 0s);
+}
+
+@keyframes vault-pulse {
+  0%,
+  100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.25;
+    transform: scale(1.75);
+  }
+}
+
+@keyframes vault-breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Hairlines tying a fanned-out label back to its city. */
+.vault-leaders line {
+  stroke: color-mix(in srgb, var(--m-gold) 42%, transparent);
+  stroke-width: 0.5;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Labels sit in an HTML layer above the SVG so their text stays a fixed
+   size no matter how wide the map is drawn. */
+.vault-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.vault-label {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+  white-space: nowrap;
+  transform: translateY(-50%);
+}
+.vault-label[data-side="left"] {
+  align-items: flex-end;
+  transform: translate(-100%, -50%);
+}
+.vault-label b {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--m-gold-light);
+}
+.vault-label i {
+  display: flex;
+  align-items: center;
+  gap: 2.5px;
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: color-mix(in srgb, var(--m-gold) 78%, transparent);
+}
+.vault-label s {
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: var(--m-success, #3ec98a);
+  box-shadow: 0 0 4px currentColor;
+}
+
+/* Gold dust drifting over the map. */
+.gold-dust {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.gold-dust span {
+  position: absolute;
+  bottom: -8px;
+  width: var(--size, 2px);
+  height: var(--size, 2px);
+  border-radius: 9999px;
+  background: var(--m-gold-light);
+  box-shadow: 0 0 6px var(--m-gold);
+  opacity: 0;
+  animation: gold-drift var(--dur, 14s) linear infinite;
+  animation-delay: var(--delay, 0s);
+}
+
+@keyframes gold-drift {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  12%,
+  80% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--drift, 0), -320px);
+  }
+}
+
+/* The claim button's travelling highlight. */
+.vault-cta {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.vault-cta::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    100deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.55) 50%,
+    transparent 62%
+  );
+  transform: translateX(-120%);
+  animation: vault-sweep 3.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes vault-sweep {
+  0%,
+  55% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+/* A phone told to stop animating means it, including the decorative
+   layers — the map still reads perfectly still. */
+@media (prefers-reduced-motion: reduce) {
+  .vault-ring,
+  .vault-halo,
+  .gold-dust span,
+  .vault-cta::after {
+    animation: none;
+  }
+  .gold-dust {
+    display: none;
+  }
+  .vault-spark {
+    display: none;
+  }
+}

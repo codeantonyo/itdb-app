@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Gift, Plus, type LucideIcon } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, ChevronRight, Gift, Globe, Plus, type LucideIcon } from "lucide-react";
 import { AppBar } from "@/components/layout/app-bar";
 import { AreaChart } from "@/components/shared/area-chart";
 import { AssetRow } from "@/components/shared/asset-row";
@@ -155,6 +155,17 @@ export default function HomePage() {
       {unavailable && (
         <NetworkNotice className="mt-4" message={portfolio.error} onRetry={portfolio.refresh} />
       )}
+
+      <Link href="/vault" className="surface mt-4 flex items-center gap-3.5 p-4 transition-opacity active:opacity-70">
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-gold-soft text-gold">
+          <Globe className="size-[21px]" strokeWidth={1.9} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[15.5px] font-semibold text-primary">ITDB Vault</span>
+          <span className="block text-[13px] text-muted">500 vaults across ten cities</span>
+        </span>
+        <ChevronRight className="size-4 shrink-0 text-muted-2" />
+      </Link>
 
       {/* ---------------- Assets / Activity ---------------- */}
       <Segmented

@@ -179,6 +179,14 @@ export interface QrsBonusRecord {
   txHash?: string;
 }
 
+/** A member's claim on one of the 500 ITDBVAULT vaults. */
+export interface VaultClaimRecord {
+  at: number;
+  city: string;
+  /** Claim order, 0-based — decides the city and the vault number */
+  index: number;
+}
+
 export type OtpPurpose = "signup" | "reset" | "change_email";
 
 export interface OtpRecord {
@@ -238,6 +246,8 @@ export interface DbShape {
   presaleRefunds: Record<string, PresaleRefundRecord>;
   /** Awarded QRS 25% milestone bonuses, keyed by accountId */
   qrsBonuses: Record<string, QrsBonusRecord>;
+  /** Claimed ITDBVAULT vaults, keyed by accountId */
+  vaultClaims: Record<string, VaultClaimRecord>;
 }
 
 const DB_DIR = path.join(process.cwd(), "data");
@@ -284,6 +294,7 @@ const emptyDb = (): DbShape => ({
   airdrops: {},
   presaleRefunds: {},
   qrsBonuses: {},
+  vaultClaims: {},
 });
 
 const obj = <T>(v: unknown, fallback: T): T =>
@@ -314,6 +325,7 @@ function normalizeDb(db: Partial<DbShape>): DbShape {
     airdrops: obj(db.airdrops, {}),
     presaleRefunds: obj(db.presaleRefunds, {}),
     qrsBonuses: obj(db.qrsBonuses, {}),
+    vaultClaims: obj(db.vaultClaims, {}),
   };
 }
 
@@ -486,6 +498,8 @@ function splitDb(db: DbShape): Map<string, string> {
     out.set(`presale:${id}`, JSON.stringify(r));
   for (const [id, r] of Object.entries(db.qrsBonuses))
     out.set(`qrsbonus:${id}`, JSON.stringify(r));
+  for (const [id, r] of Object.entries(db.vaultClaims))
+    out.set(`vault:${id}`, JSON.stringify(r));
   return out;
 }
 
@@ -519,6 +533,8 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
       db.presaleRefunds[shard.slice(8)] = value as PresaleRefundRecord;
     else if (shard.startsWith("qrsbonus:"))
       db.qrsBonuses[shard.slice(9)] = value as QrsBonusRecord;
+    else if (shard.startsWith("vault:"))
+      db.vaultClaims[shard.slice(6)] = value as VaultClaimRecord;
   }
   db.accounts.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   return normalizeDb(db);
@@ -530,7 +546,7 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
  * deployment's shards survive a brief old/new instance overlap.
  */
 const OWNED_SHARD_RE =
-  /^(meta|otps|otpThrottle|loginThrottle|acquired)$|^(account|userstate|ledger|itdbone|qrs|airdrop|presale|qrsbonus):/;
+  /^(meta|otps|otpThrottle|loginThrottle|acquired)$|^(account|userstate|ledger|itdbone|qrs|airdrop|presale|qrsbonus|vault):/;
 
 function entryFromRow(row: {
   shard: string;
