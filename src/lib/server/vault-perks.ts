@@ -1,5 +1,4 @@
-import { EARLY_BIRD_TIER_DIVISOR, isEarlyBird } from "@/lib/itdb/vault";
-import type { VaultClaimRecord } from "./db";
+import { EARLY_BIRD_TIER_DIVISOR } from "@/lib/itdb/vault";
 
 /**
  * Early birds take 50% off the ITDBVAULT holding tiers.
@@ -12,9 +11,8 @@ import type { VaultClaimRecord } from "./db";
  * the figure shown as the member's balance, or the app would tell them
  * they hold twice what they do.
  */
-export function vaultTierBalance(balance: number, claim: VaultClaimRecord | undefined): number {
-  if (!claim || !isEarlyBird(claim.at)) return balance;
-  return balance * EARLY_BIRD_TIER_DIVISOR;
+export function vaultTierBalance(balance: number, earlyBird: boolean): number {
+  return earlyBird ? balance * EARLY_BIRD_TIER_DIVISOR : balance;
 }
 
 /**

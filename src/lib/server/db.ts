@@ -179,18 +179,17 @@ export interface QrsBonusRecord {
   txHash?: string;
 }
 
-/** A member's claim on one of the 500 ITDBVAULT vaults. */
+/** One of the 500 ITDBVAULT vaults, held by a member. */
 export interface VaultClaimRecord {
   at: number;
   city: string;
-  /** Claim order, 0-based */
-  index: number;
   /**
-   * The vault number, 1-500. Early birds choose it; everyone else gets
-   * the lowest free one. Optional only for claims written before
-   * numbers existed — read it as `number ?? index + 1`.
+   * The vault number, 1-500, unique across the whole network. Early
+   * birds choose it; everyone else is given a random free one.
    */
-  number?: number;
+  number: number;
+  /** Global claim order, kept for history only */
+  index?: number;
 }
 
 export type OtpPurpose = "signup" | "reset" | "change_email";
@@ -252,8 +251,8 @@ export interface DbShape {
   presaleRefunds: Record<string, PresaleRefundRecord>;
   /** Awarded QRS 25% milestone bonuses, keyed by accountId */
   qrsBonuses: Record<string, QrsBonusRecord>;
-  /** Claimed ITDBVAULT vaults, keyed by accountId */
-  vaultClaims: Record<string, VaultClaimRecord>;
+  /** ITDBVAULT vaults held, keyed by accountId — a member may hold several */
+  vaultClaims: Record<string, VaultClaimRecord[]>;
 }
 
 const DB_DIR = path.join(process.cwd(), "data");
@@ -307,6 +306,25 @@ const obj = <T>(v: unknown, fallback: T): T =>
   v && typeof v === "object" ? (v as T) : fallback;
 
 /**
+ * Vaults used to be one record per account; now a member holds a list.
+ * An old single record is read as a one-item list, and one written before
+ * vault numbers existed takes the number it was always displayed with
+ * (its claim order + 1), so nobody's vault changes number on upgrade.
+ */
+function normalizeVaults(raw: Record<string, unknown>): Record<string, VaultClaimRecord[]> {
+  const out: Record<string, VaultClaimRecord[]> = {};
+  for (const [id, v] of Object.entries(raw)) {
+    const list = (Array.isArray(v) ? v : [v]) as Partial<VaultClaimRecord>[];
+    out[id] = list
+      .filter((c): c is Partial<VaultClaimRecord> & { city: string; at: number } =>
+        typeof c?.city === "string" && typeof c?.at === "number",
+      )
+      .map((c) => ({ ...c, number: c.number ?? (c.index ?? 0) + 1 }) as VaultClaimRecord);
+  }
+  return out;
+}
+
+/**
  * Upgrade any stored shape (file or Postgres) to the current DbShape.
  *
  * CRITICAL: only a genuinely missing file yields an empty database. Any
@@ -331,7 +349,7 @@ function normalizeDb(db: Partial<DbShape>): DbShape {
     airdrops: obj(db.airdrops, {}),
     presaleRefunds: obj(db.presaleRefunds, {}),
     qrsBonuses: obj(db.qrsBonuses, {}),
-    vaultClaims: obj(db.vaultClaims, {}),
+    vaultClaims: normalizeVaults(obj(db.vaultClaims, {})),
   };
 }
 
@@ -540,7 +558,7 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
     else if (shard.startsWith("qrsbonus:"))
       db.qrsBonuses[shard.slice(9)] = value as QrsBonusRecord;
     else if (shard.startsWith("vault:"))
-      db.vaultClaims[shard.slice(6)] = value as VaultClaimRecord;
+      db.vaultClaims[shard.slice(6)] = value as VaultClaimRecord[];
   }
   db.accounts.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   return normalizeDb(db);
