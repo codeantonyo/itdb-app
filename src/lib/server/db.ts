@@ -228,6 +228,8 @@ export interface ReferralPayout {
   paidAt?: number;
   txHash?: string;
   error?: string;
+  /** The failure is ours (e.g. the rewards account ran low), not the member's */
+  operator?: boolean;
 }
 
 export type OtpPurpose = "signup" | "reset" | "change_email";

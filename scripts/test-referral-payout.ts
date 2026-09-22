@@ -24,6 +24,18 @@ assert.equal(payoutConfig({} as NodeJS.ProcessEnv), null, "no key, no payouts");
 assert.equal(payoutConfig({ ITDB_REWARDS_SECRET: cfg.secret, ITDB_REWARDS_PAUSED: "1" } as unknown as NodeJS.ProcessEnv), null, "pause switch");
 const env = payoutConfig({ ITDB_REWARDS_SECRET: cfg.secret } as unknown as NodeJS.ProcessEnv)!;
 assert.equal(env.perReferral, 10_000, "10,000 ITDB per side by default");
+assert.equal(env.dailyCap, 100_000, "works with no cap set");
+assert.equal(
+  payoutConfig({ DISTRIBUTOR_SECRET: cfg.secret } as unknown as NodeJS.ProcessEnv)?.secret,
+  cfg.secret,
+  "DISTRIBUTOR_SECRET alone switches payouts on",
+);
+const other = Keypair.random().secret();
+assert.equal(
+  payoutConfig({ DISTRIBUTOR_SECRET: cfg.secret, ITDB_REWARDS_SECRET: other } as unknown as NodeJS.ProcessEnv)?.secret,
+  other,
+  "a dedicated rewards key overrides it",
+);
 assert.equal(env.passphrase, "Public Global Stellar Network ; September 2015", "mainnet unless told otherwise");
 assert.equal(configProblem(cfg), null);
 assert.match(configProblem({ ...cfg, secret: "not-a-key" })!, /not a valid/);

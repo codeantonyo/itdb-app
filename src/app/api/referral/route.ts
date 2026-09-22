@@ -69,7 +69,7 @@ function rewardView(p: ReferralPayout | undefined, qualified: boolean, amount: n
   if (!qualified) return { amount, status: "waiting", note: "Paid once they reach Tier 2" };
   if (p?.status === "paid") return { amount: p.amount, status: "paid", txHash: p.txHash };
   if (p?.status === "pending") return { amount, status: "sending" };
-  if (p?.status === "failed")
+  if (p?.status === "failed" && !p.operator)
     return { amount, status: "blocked", note: p.error ?? "Will be retried automatically" };
   return { amount, status: "queued", note: enabled ? "Sending shortly" : "Sending starts soon" };
 }

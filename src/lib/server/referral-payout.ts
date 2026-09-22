@@ -6,10 +6,10 @@ import { mutateDb, type DbShape, type ReferralPayout } from "./db";
 /**
  * REAL ON-CHAIN referral rewards — ITDB sent from a rewards account.
  *
- * Every qualified referral pays REWARD_PER_REFERRAL ITDB to the referrer
- * and the same to the new member. Nothing is sent unless
- * ITDB_REWARDS_SECRET is set in the environment, so this ships switched
- * off and is switched on by whoever adds that key in Vercel.
+ * Every qualified referral pays 10,000 ITDB to the referrer and the same
+ * to the new member, from the account whose key is DISTRIBUTOR_SECRET
+ * (or ITDB_REWARDS_SECRET, which overrides it, should rewards ever move to
+ * a dedicated account). With neither set, nothing is sent.
  *
  * Three rules this is built around, because money that leaves on chain
  * does not come back:
@@ -50,7 +50,7 @@ export interface PayoutConfig {
 
 /** Settings from the environment, or null when payouts are switched off. */
 export function payoutConfig(env: NodeJS.ProcessEnv = process.env): PayoutConfig | null {
-  const secret = env.ITDB_REWARDS_SECRET?.trim();
+  const secret = (env.ITDB_REWARDS_SECRET || env.DISTRIBUTOR_SECRET)?.trim();
   if (!secret || env.ITDB_REWARDS_PAUSED === "1") return null;
   const testnet = env.STELLAR_NETWORK === "testnet";
   return {
@@ -160,7 +160,13 @@ export function claimPayouts(db: DbShape, cfg: PayoutConfig, now: number): Claim
  */
 export type SendResult =
   | { ok: true; txHash: string }
-  | { ok: false; error: string; landed: false | "unknown" };
+  | {
+      ok: false;
+      error: string;
+      landed: false | "unknown";
+      /** Ours to fix, not the member's: they are shown "queued", not an error */
+      operator?: boolean;
+    };
 
 /** Look for a payment this rewards account already made with this memo. */
 export async function findByMemo(cfg: PayoutConfig, id: string): Promise<string | null> {
@@ -194,11 +200,11 @@ export async function sendItdb(cfg: PayoutConfig, to: string, amount: number, id
   try {
     source = await server.loadAccount(keys.publicKey());
   } catch {
-    return { ok: false, error: "Could not load the rewards account.", landed: false };
+    return { ok: false, error: "Could not load the rewards account.", landed: false, operator: true };
   }
   const float = source.balances.find((b) => has(b as { asset_code?: string; asset_issuer?: string }));
   if (!float || Number(float.balance) < amount)
-    return { ok: false, error: `Rewards account is short of ${cfg.asset.code} — top it up.`, landed: false };
+    return { ok: false, error: `Rewards account is short of ${cfg.asset.code} — top it up.`, landed: false, operator: true };
 
   const tx = new TransactionBuilder(source, { fee: String(Number(BASE_FEE) * 10), networkPassphrase: cfg.passphrase })
     .addOperation(Operation.payment({ destination: to, asset, amount: amount.toFixed(7) }))
@@ -276,6 +282,7 @@ export async function settleReferralRewards(now = Date.now()): Promise<SettleRep
       } else if (result.landed === false) {
         p.status = "failed";
         p.error = result.error;
+        p.operator = result.operator === true;
       } else {
         // Unknown: stay pending. After STALE_MS the memo check settles it.
         p.error = result.error;
@@ -288,4 +295,56 @@ export async function settleReferralRewards(now = Date.now()): Promise<SettleRep
     else report.paid += 1;
   }
   return report;
+}
+
+/* ------------------------------------------------------------------ */
+/*  4. A look without touching anything                                */
+/* ------------------------------------------------------------------ */
+
+export interface PayoutStatus {
+  enabled: boolean;
+  problem: string | null;
+  /** The paying account: a public key, safe to show */
+  from: string | null;
+  /** Its ITDB balance, or null if it could not be read */
+  float: number | null;
+  perReferral: number;
+  dailyCap: number;
+  /** Rewards owed and not yet sent */
+  owed: number;
+}
+
+/** Read-only: what would pay, from where, and how much is waiting. */
+export async function payoutStatus(db: DbShape): Promise<PayoutStatus> {
+  const cfg = payoutConfig();
+  const qualified = Object.values(db.referralAwards).filter((a) => a.length > 0).length;
+  const paid = Object.values(db.referralPayouts).filter((p) => p.status === "paid").length;
+  const base = {
+    perReferral: cfg?.perReferral ?? 10_000,
+    dailyCap: cfg?.dailyCap ?? 100_000,
+    owed: Math.max(qualified * 2 - paid, 0),
+  };
+  if (!cfg) return { enabled: false, problem: "No DISTRIBUTOR_SECRET set.", from: null, float: null, ...base };
+
+  const problem = configProblem(cfg);
+  if (problem) return { enabled: false, problem, from: null, float: null, ...base };
+
+  const from = Keypair.fromSecret(cfg.secret).publicKey();
+  let float: number | null = null;
+  try {
+    const acct = await new Horizon.Server(cfg.horizon).loadAccount(from);
+    const line = acct.balances.find(
+      (b) => "asset_code" in b && b.asset_code === cfg.asset.code && b.asset_issuer === cfg.asset.issuer,
+    );
+    float = line && "balance" in line ? Number(line.balance) : 0;
+  } catch {
+    float = null;
+  }
+  return {
+    enabled: true,
+    problem: float === 0 ? `The paying account holds no ${cfg.asset.code}.` : null,
+    from,
+    float,
+    ...base,
+  };
 }
