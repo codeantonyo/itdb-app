@@ -192,6 +192,20 @@ export interface VaultClaimRecord {
   index?: number;
 }
 
+/**
+ * One referral match bonus: the referee reached Tier 2 in a token, and
+ * both they and their referrer are owed that holding again.
+ */
+export interface ReferralAward {
+  token: string;
+  /** The referee's holding when they reached Tier 2 — matched 1:1 */
+  amount: number;
+  at: number;
+  referrerId: string;
+  /** Wallets that held it — each (wallet, token) is matched only once */
+  wallets: string[];
+}
+
 export type OtpPurpose = "signup" | "reset" | "change_email";
 
 export interface OtpRecord {
@@ -253,6 +267,8 @@ export interface DbShape {
   qrsBonuses: Record<string, QrsBonusRecord>;
   /** ITDBVAULT vaults held, keyed by accountId — a member may hold several */
   vaultClaims: Record<string, VaultClaimRecord[]>;
+  /** Referral match bonuses, keyed by the REFEREE's accountId */
+  referralAwards: Record<string, ReferralAward[]>;
 }
 
 const DB_DIR = path.join(process.cwd(), "data");
@@ -300,6 +316,7 @@ const emptyDb = (): DbShape => ({
   presaleRefunds: {},
   qrsBonuses: {},
   vaultClaims: {},
+  referralAwards: {},
 });
 
 const obj = <T>(v: unknown, fallback: T): T =>
@@ -350,6 +367,7 @@ function normalizeDb(db: Partial<DbShape>): DbShape {
     presaleRefunds: obj(db.presaleRefunds, {}),
     qrsBonuses: obj(db.qrsBonuses, {}),
     vaultClaims: normalizeVaults(obj(db.vaultClaims, {})),
+    referralAwards: obj(db.referralAwards, {}),
   };
 }
 
@@ -524,6 +542,8 @@ function splitDb(db: DbShape): Map<string, string> {
     out.set(`qrsbonus:${id}`, JSON.stringify(r));
   for (const [id, r] of Object.entries(db.vaultClaims))
     out.set(`vault:${id}`, JSON.stringify(r));
+  for (const [id, r] of Object.entries(db.referralAwards))
+    out.set(`refaward:${id}`, JSON.stringify(r));
   return out;
 }
 
@@ -559,6 +579,8 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
       db.qrsBonuses[shard.slice(9)] = value as QrsBonusRecord;
     else if (shard.startsWith("vault:"))
       db.vaultClaims[shard.slice(6)] = value as VaultClaimRecord[];
+    else if (shard.startsWith("refaward:"))
+      db.referralAwards[shard.slice(9)] = value as ReferralAward[];
   }
   db.accounts.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   return normalizeDb(db);
@@ -570,7 +592,7 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
  * deployment's shards survive a brief old/new instance overlap.
  */
 const OWNED_SHARD_RE =
-  /^(meta|otps|otpThrottle|loginThrottle|acquired)$|^(account|userstate|ledger|itdbone|qrs|airdrop|presale|qrsbonus|vault):/;
+  /^(meta|otps|otpThrottle|loginThrottle|acquired)$|^(account|userstate|ledger|itdbone|qrs|airdrop|presale|qrsbonus|vault|refaward):/;
 
 function entryFromRow(row: {
   shard: string;

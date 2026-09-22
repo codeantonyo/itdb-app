@@ -1,9 +1,8 @@
 "use client";
 
 import Link from "next/link";
-
 import { useState } from "react";
-import { Check, ChevronRight, Copy, LogOut, Moon, Plus, Sun, Trash2, Wallet } from "lucide-react";
+import { ChevronRight, LogOut, Moon, Plus, Sun, Trash2, Wallet } from "lucide-react";
 import { AppBar } from "@/components/layout/app-bar";
 import { Avatar } from "@/components/shared/avatar";
 import { LedgerLine } from "@/components/shared/ledger-line";
@@ -52,7 +51,6 @@ export default function ProfilePage() {
   const [newWallet, setNewWallet] = useState("");
   const [walletError, setWalletError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   if (!session) return null;
 
@@ -76,16 +74,6 @@ export default function ProfilePage() {
     }
     setNewWallet("");
     setWalletError(null);
-  };
-
-  const copyReferral = async () => {
-    try {
-      await navigator.clipboard.writeText(session.referralCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* clipboard unavailable */
-    }
   };
 
   const memberSince = new Date(session.createdAt).toLocaleDateString("en-GB", {
@@ -136,25 +124,15 @@ export default function ProfilePage() {
 
       {/* ---------------- Referral ---------------- */}
       <p className="label mb-1.5 mt-5 px-1">Invite</p>
-      <button onClick={copyReferral} className="surface tap flex w-full items-center gap-3 p-4 text-left">
+      <Link href="/referral" className="surface tap flex w-full items-center gap-3 p-4 text-left">
         <span className="min-w-0 flex-1">
-          <span className="block text-[13px] text-muted">Your referral code</span>
+          <span className="block text-[13px] text-muted">Referral program · 100% match</span>
           <span className="font-display block text-[20px] font-semibold tracking-[0.08em] text-gold">
             {session.referralCode}
           </span>
         </span>
-        <span className="flex items-center gap-1.5 text-[14px] font-semibold text-muted">
-          {copied ? (
-            <>
-              <Check className="size-4" /> Copied
-            </>
-          ) : (
-            <>
-              <Copy className="size-4" /> Copy
-            </>
-          )}
-        </span>
-      </button>
+        <ChevronRight className="size-4 shrink-0 text-muted-2" />
+      </Link>
 
       {/* ---------------- Appearance ---------------- */}
       <p className="label mb-1.5 mt-5 px-1">Appearance</p>

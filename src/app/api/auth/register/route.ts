@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { REFERRAL_RE, referralCodeFor } from "@/lib/referral";
+import { referralProblem } from "@/lib/server/referral";
 import {
   hashPassword,
   mutateDb,
@@ -56,6 +57,17 @@ export async function POST(req: Request) {
   const result = await mutateDb((db) => {
     if (db.accounts.some((a) => a.email === email)) {
       return { error: "An account with this email already exists. Sign in instead." };
+    }
+    // The code must belong to a real member and pass the same self-referral
+    // checks as adding one later — it used to be checked for shape only,
+    // so any made-up ITDB-XXXXXX was accepted.
+    if (referredBy) {
+      const problem = referralProblem(
+        db,
+        { id: "", wallets: [address], createdAt: Date.now(), referredBy: null },
+        referredBy,
+      );
+      if (problem) return { error: `Referral code: ${problem}` };
     }
     const salt = newSalt();
     const account: DbAccount = {
