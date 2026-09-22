@@ -17,7 +17,8 @@ const TABS: { href: string; match: (p: string) => boolean; label: string; icon: 
   { href: "/", match: (p) => p === "/", label: "Home", icon: Home },
   {
     href: "/portfolio",
-    match: (p) => p.startsWith("/portfolio") || p === "/itdb" || p === "/itdbone" || p === "/qrs",
+    match: (p) =>
+      p.startsWith("/portfolio") || p === "/itdb" || p === "/itdbone" || p === "/qrs" || p === "/vault",
     label: "Portfolio",
     icon: PieChart,
   },

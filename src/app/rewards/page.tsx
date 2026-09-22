@@ -7,6 +7,7 @@ import type { AirdropSummary } from "@/lib/server/airdrop";
 import type { ItdbSummary } from "@/app/api/itdb/route";
 import type { ItdboneSummary } from "@/app/api/itdbone/route";
 import type { QrsSummary } from "@/app/api/qrs/route";
+import type { VaultSummary } from "@/app/api/vault/route";
 import { AppBar } from "@/components/layout/app-bar";
 import { ExactFigure } from "@/components/shared/exact-figure";
 import { NetworkNotice } from "@/components/shared/network-notice";
@@ -134,6 +135,55 @@ function TokenRewards({
   );
 }
 
+/**
+ * ITDBVAULT in the same shape as the other three tokens.
+ *
+ * An early bird's tier is read at twice their holding. The card shows
+ * what they actually hold, so the thresholds are scaled down by the same
+ * factor instead — the "more to Tier N" line then states real tokens.
+ */
+function VaultRewards({ v }: { v: VaultSummary }) {
+  const held = v.holding ?? 0;
+  const scale = held > 0 ? v.tierCounted / held : 1;
+  return (
+    <TokenRewards
+      token="ITDBVAULT"
+      href="/vault"
+      headline={v.rewards?.weekly.USD ?? 0}
+      headlineNote={v.rewards ? "weekly currency payout" : "rewards start at Tier 1"}
+      multiplier={{ value: v.rewards?.earlyBirdMultiplier ?? 1, from: null, next: null }}
+      milestones={v.milestones}
+      progress={{
+        tier: v.tier?.tier ?? null,
+        floor: (v.tier?.rangeMin ?? 0) / scale,
+        ceiling: v.next ? v.next.min / scale : null,
+        nextTier: v.next?.tier ?? null,
+        balance: held,
+        unit: "ITDBVAULT",
+      }}
+    >
+      <Link href="/vault" className="inset mt-4 flex items-center gap-2.5 px-3.5 py-3 transition-opacity active:opacity-70">
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13.5px] font-semibold text-primary">
+            {v.vaults.length > 0
+              ? `${v.vaults.length} of ${v.allowed} vault${v.allowed > 1 ? "s" : ""} chosen`
+              : v.allowed > 0
+                ? `Choose your ${v.allowed} vault${v.allowed > 1 ? "s" : ""}`
+                : "Open the vault network"}
+          </span>
+          <span className="tnum block text-[12.5px] text-muted">
+            {v.rewards
+              ? `${formatAmount(v.rewards.metals[0]?.grams ?? 0, 0)} g gold a month` +
+                (v.mine ? ` · ${formatAmount(v.mine.refundXlm, 2)} XLM early-bird refund` : "")
+              : `${formatAmount(v.sale.soldPct, 1)}% of the sale sold`}
+          </span>
+        </span>
+        <ChevronRight className="size-4 shrink-0 text-muted-2" />
+      </Link>
+    </TokenRewards>
+  );
+}
+
 /** The collect button for a yield programme. */
 function CollectButton({ y, onCollect }: { y: YieldComputed; onCollect: () => void }) {
   const eligible = y.tier !== null;
@@ -160,6 +210,7 @@ export default function RewardsPage() {
   const itdb = useJson<ItdbSummary>("/api/itdb", 60_000);
   const itdbone = useJson<ItdboneSummary>("/api/itdbone", 60_000);
   const qrs = useJson<QrsSummary>("/api/qrs", 60_000);
+  const vault = useJson<VaultSummary>("/api/vault", 60_000);
   const airdrop = useJson<AirdropSummary>("/api/airdrop", 120_000);
   const [collecting, setCollecting] = useState<Program | null>(null);
 
@@ -340,11 +391,17 @@ export default function RewardsPage() {
         ) : (
           <Skeleton className="h-[300px] rounded-[18px]" />
         )}
+
+        {vault.data ? (
+          <VaultRewards v={vault.data} />
+        ) : (
+          <Skeleton className="h-[260px] rounded-[18px]" />
+        )}
       </div>
 
       <p className="mt-4 px-1 text-[12.5px] leading-relaxed text-muted-2">
-        Yield counts from the day you first acquired each token on chain, and keeps building while you wait. Each
-        token&rsquo;s bonuses apply to that token alone.
+        Yield counts from the day you first acquired each token on chain, and keeps building while you wait. Milestone
+        bonuses apply to their own token; early-bird status applies across your account.
       </p>
 
       {collecting && (

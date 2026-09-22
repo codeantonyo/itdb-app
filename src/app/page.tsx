@@ -29,7 +29,12 @@ const TIER_OF: Record<string, (b: number) => { tier: number } | null> = {
   ITDBONE: itdboneTierFor,
   QRS: qrsTierFor,
 };
-const HREF_OF: Record<string, string> = { ITDB: "/itdb", ITDBONE: "/itdbone", QRS: "/qrs" };
+const HREF_OF: Record<string, string> = {
+  ITDB: "/itdb",
+  ITDBONE: "/itdbone",
+  QRS: "/qrs",
+  ITDBVAULT: "/vault",
+};
 
 function greeting(): string {
   const h = new Date().getHours();
