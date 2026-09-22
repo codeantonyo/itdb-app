@@ -23,12 +23,14 @@ const CHECK_PER_RUN = 30;
  * or changing anything.
  */
 export async function GET(req: Request) {
+  // The check is read-only and shows only what the chain already makes
+  // public (an account address and its balance), so it needs no secret.
+  if (new URL(req.url).searchParams.get("check") === "1")
+    return NextResponse.json(await payoutStatus(await getDb()));
+
   const secret = process.env.CRON_SECRET;
   if (secret && req.headers.get("authorization") !== `Bearer ${secret}`)
     return NextResponse.json({ error: "Not allowed." }, { status: 401 });
-
-  if (new URL(req.url).searchParams.get("check") === "1")
-    return NextResponse.json(await payoutStatus(await getDb()));
 
   const db = await getDb();
   const unqualified = db.accounts
