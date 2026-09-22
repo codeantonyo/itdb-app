@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Check, Copy, Share2, Trophy, UserPlus } from "lucide-react";
-import type { ReferralSummary } from "@/app/api/referral/route";
+import type { ReferralSummary, RewardView } from "@/app/api/referral/route";
 import { AppBar } from "@/components/layout/app-bar";
 import { NetworkNotice } from "@/components/shared/network-notice";
 import { SectionHeader } from "@/components/shared/section-header";
@@ -20,7 +20,7 @@ export default function ReferralPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <AppBar back title="Referrals" subtitle="100% match bonus" />
+      <AppBar back title="Referrals" subtitle="ITDB for every referral who reaches Tier 2" />
 
       {ref.error && !s && <NetworkNotice message={ref.error} onRetry={ref.refresh} />}
       {!s && !ref.error && <Skeleton className="h-[220px] rounded-[20px]" />}
@@ -124,8 +124,8 @@ function AddCode({ until: ends, onDone }: { until: number; onDone: () => void })
       <SectionHeader title="Add a referral code" note={`until ${until(ends)}`} />
       <div className="surface p-5">
         <p className="text-[13.5px] leading-relaxed text-muted">
-          Joined through a friend? Enter their code in your first 24 hours and you both get the match bonus when you
-          reach Tier 2.
+          Joined through a friend? Enter their code in your first 24 hours and you both receive ITDB when you reach
+          Tier 2.
         </p>
         <div className="mt-3 flex gap-2">
           <input
@@ -150,43 +150,83 @@ function AddCode({ until: ends, onDone }: { until: number; onDone: () => void })
   );
 }
 
-function MatchBonus({ s }: { s: ReferralSummary }) {
-  const earnedAsReferrer = Object.entries(s.asReferrer);
-  const any = earnedAsReferrer.length > 0 || s.asReferee.length > 0;
+const TX = (hash: string) => `https://stellar.expert/explorer/public/tx/${hash}`;
+
+const STATUS_STYLE: Record<RewardView["status"], string> = {
+  paid: "bg-success-soft text-success",
+  sending: "bg-gold-soft text-gold",
+  queued: "bg-gold-soft text-gold",
+  blocked: "bg-danger-soft text-danger",
+  waiting: "bg-elevated text-muted-2",
+};
+const STATUS_LABEL: Record<RewardView["status"], string> = {
+  paid: "Sent",
+  sending: "Sending",
+  queued: "Queued",
+  blocked: "Action needed",
+  waiting: "Not yet",
+};
+
+function Status({ r }: { r: RewardView }) {
   return (
-    <section className="flex flex-col gap-3">
-      <SectionHeader title="Match bonus earned" note="100% match" />
-      <div className="surface p-5">
-        {any ? (
-          <div className="flex flex-col divide-y divide-hairline">
-            {earnedAsReferrer.map(([token, amount]) => (
-              <Line key={`r-${token}`} label={`${token} · from your referrals`} value={amount} token={token} />
-            ))}
-            {s.asReferee.map((a) => (
-              <Line key={`e-${a.token}`} label={`${a.token} · for reaching Tier 2`} value={a.amount} token={a.token} />
-            ))}
-          </div>
-        ) : (
-          <p className="text-[13.5px] leading-relaxed text-muted">
-            When someone you invite reaches Tier 2, we match their holding token for token — for them and for you.
-          </p>
-        )}
-        <p className="mt-3 text-[12.5px] leading-relaxed text-muted-2">
-          Credited automatically the moment Tier 2 is reached, and paid from the ITDB ecosystem reserve.
-        </p>
-      </div>
-    </section>
+    <span className="flex shrink-0 flex-col items-end gap-0.5">
+      <span className={cn("rounded-md px-1.5 py-px text-[10.5px] font-bold uppercase tracking-wide", STATUS_STYLE[r.status])}>
+        {STATUS_LABEL[r.status]}
+      </span>
+      {r.txHash && (
+        <a href={TX(r.txHash)} target="_blank" rel="noopener noreferrer" className="text-[11.5px] font-semibold text-gold">
+          View transaction
+        </a>
+      )}
+    </span>
   );
 }
 
-function Line({ label, value, token }: { label: string; value: number; token: string }) {
+function MatchBonus({ s }: { s: ReferralSummary }) {
+  const per = formatAmount(s.perReferral, 0);
   return (
-    <div className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
-      <span className="text-[14px] text-primary">{label}</span>
-      <span className="tnum text-[14.5px] font-semibold text-gold">
-        +{formatAmount(value, 2)} {token}
-      </span>
-    </div>
+    <section className="flex flex-col gap-3">
+      <SectionHeader title="Referral rewards" note={`${per} ITDB each`} />
+      <div className="surface p-5">
+        <p className="text-[13.5px] leading-relaxed text-muted">
+          Every referral who reaches Tier 2 earns <span className="font-semibold text-primary">{per} ITDB for you</span>{" "}
+          and <span className="font-semibold text-primary">{per} ITDB for them</span>, sent straight to your wallets
+          on the Stellar network.
+        </p>
+
+        {(s.received > 0 || s.owed > 0) && (
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="rounded-2xl bg-elevated px-3.5 py-3">
+              <p className="text-[12px] text-muted">Received</p>
+              <p className="tnum mt-0.5 text-[17px] font-semibold text-gold">{formatAmount(s.received, 0)} ITDB</p>
+            </div>
+            <div className="rounded-2xl bg-elevated px-3.5 py-3">
+              <p className="text-[12px] text-muted">On its way</p>
+              <p className="tnum mt-0.5 text-[17px] font-semibold text-primary">{formatAmount(s.owed, 0)} ITDB</p>
+            </div>
+          </div>
+        )}
+
+        {s.myReward && (
+          <div className="mt-4 flex items-start justify-between gap-3 border-t border-hairline pt-4">
+            <div className="min-w-0">
+              <p className="text-[14.5px] font-semibold text-primary">Your welcome reward</p>
+              <p className="text-[12.5px] text-muted">
+                {s.myReward.status === "waiting"
+                  ? `${per} ITDB once you reach Tier 2`
+                  : s.myReward.note ?? `${per} ITDB for joining through ${s.referrer ?? "a referral"}`}
+              </p>
+            </div>
+            <Status r={s.myReward} />
+          </div>
+        )}
+
+        <p className="mt-4 text-[12.5px] leading-relaxed text-muted-2">
+          Nobody approves these by hand. Your wallet needs an ITDB trustline to receive them — the same one it needs to
+          hold ITDB at all.
+        </p>
+      </div>
+    </section>
   );
 }
 
@@ -203,22 +243,16 @@ function YourReferrals({ s }: { s: ReferralSummary }) {
         <div className="surface divide-y divide-hairline">
           {s.referees.map((r) => (
             <div key={r.username} className="flex items-center gap-3 px-4 py-3.5">
-              <span
-                className={cn(
-                  "flex size-8 shrink-0 items-center justify-center rounded-full",
-                  r.qualifiedAt ? "bg-success-soft text-success" : "bg-elevated text-muted-2",
-                )}
-              >
-                <Check className="size-4" strokeWidth={2.4} />
-              </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[15px] font-semibold text-primary">{r.username}</p>
                 <p className="text-[12.5px] text-muted">
                   {r.qualifiedAt
-                    ? `Reached Tier 2 · ${r.awards.map((a) => a.token).join(", ")}`
-                    : "Joined — counts once they reach Tier 2"}
+                    ? `Tier 2 in ${r.tokens.join(", ")} · ${formatAmount(r.reward.amount, 0)} ITDB for you`
+                    : r.reward.note}
+                  {r.reward.status === "blocked" && r.reward.note && ` · ${r.reward.note}`}
                 </p>
               </div>
+              <Status r={r.reward} />
             </div>
           ))}
         </div>
@@ -295,7 +329,8 @@ function Rules({ s }: { s: ReferralSummary }) {
           <li>1. Share your link or code.</li>
           <li>2. Your friend joins and connects their wallet — or adds your code in their first 24 hours.</li>
           <li>
-            3. When they reach Tier 2 in any ITDB token, you both receive their holding again, token for token.
+            3. When they reach Tier 2 in any ITDB token, you both receive {formatAmount(s.perReferral, 0)} ITDB,
+            sent to your wallets automatically.
           </li>
         </ol>
         <p className="label mt-4">Tier 2 starts at</p>

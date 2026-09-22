@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { getDb, mutateDb, type DbAccount, type ReferralAward } from "@/lib/server/db";
+import { NextResponse, after } from "next/server";
+import { getDb, mutateDb, type DbAccount, type ReferralPayout } from "@/lib/server/db";
 import {
   MONTHLY_PRIZES,
   REFERRAL_TOKENS,
@@ -12,14 +12,30 @@ import {
   referrerOf,
   type LeaderRow,
 } from "@/lib/server/referral";
+import { payoutConfig, settleReferralRewards } from "@/lib/server/referral-payout";
 import { sessionAccountId } from "@/lib/server/session";
+
+/** Room for a few Stellar payments after the response has gone. */
+export const maxDuration = 60;
+
+export type RewardStatus = "waiting" | "queued" | "sending" | "paid" | "blocked";
+
+export interface RewardView {
+  amount: number;
+  status: RewardStatus;
+  txHash?: string;
+  /** Why it has not been paid yet, in words the member can act on */
+  note?: string;
+}
 
 export interface RefereeRow {
   username: string;
   joinedAt: number;
   qualifiedAt: number | null;
-  /** Match bonuses this referral earned you, by token */
-  awards: { token: string; amount: number }[];
+  /** What qualified them — Tier 2 in these tokens */
+  tokens: string[];
+  /** Your reward for this referral */
+  reward: RewardView;
 }
 
 export interface ReferralSummary {
@@ -30,11 +46,16 @@ export interface ReferralSummary {
   referrer: string | null;
   /** Until when I may still add a code, or null when I no longer can */
   addCodeUntil: number | null;
-  /** Match bonuses I earned as a referee */
-  asReferee: ReferralAward[];
+  /** ITDB per side, per qualified referral */
+  perReferral: number;
+  /** Whether rewards are being sent on chain right now */
+  sending: boolean;
+  /** My own reward for joining through a referral, once I qualify */
+  myReward: RewardView | null;
   referees: RefereeRow[];
-  /** Totals owed to me as a referrer, by token */
-  asReferrer: Record<string, number>;
+  /** ITDB received on chain as a referrer, and still to come */
+  received: number;
+  owed: number;
   tiers: { token: string; tier2: number }[];
   month: { label: string; rows: (LeaderRow & { rank: number })[]; myRank: number | null };
   lastMonth: { label: string; winners: (LeaderRow & { rank: number })[] };
@@ -44,23 +65,41 @@ export interface ReferralSummary {
 const monthLabel = (y: number, m: number) =>
   new Date(Date.UTC(y, m, 1)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
+function rewardView(p: ReferralPayout | undefined, qualified: boolean, amount: number, enabled: boolean): RewardView {
+  if (!qualified) return { amount, status: "waiting", note: "Paid once they reach Tier 2" };
+  if (p?.status === "paid") return { amount: p.amount, status: "paid", txHash: p.txHash };
+  if (p?.status === "pending") return { amount, status: "sending" };
+  if (p?.status === "failed")
+    return { amount, status: "blocked", note: p.error ?? "Will be retried automatically" };
+  return { amount, status: "queued", note: enabled ? "Sending shortly" : "Sending starts soon" };
+}
+
 function summarise(req: Request, db: Awaited<ReturnType<typeof getDb>>, me: DbAccount, now = Date.now()): ReferralSummary {
   const origin = new URL(req.url).origin;
-  const referees = refereesOf(db, me);
+  const cfg = payoutConfig();
+  const per = cfg?.perReferral ?? Number(process.env.ITDB_REWARDS_PER_REFERRAL ?? 10_000);
+  const enabled = cfg !== null;
 
-  const asReferrer: Record<string, number> = {};
-  const rows: RefereeRow[] = referees
+  let received = 0;
+  let owed = 0;
+  const rows: RefereeRow[] = refereesOf(db, me)
     .map((r) => {
       const awards = (db.referralAwards[r.id] ?? []).filter((a) => a.referrerId === me.id);
-      for (const a of awards) asReferrer[a.token] = (asReferrer[a.token] ?? 0) + a.amount;
+      const q = awards.length > 0;
+      const reward = rewardView(db.referralPayouts[`${r.id}:referrer`], q, per, enabled);
+      if (reward.status === "paid") received += reward.amount;
+      else if (q) owed += reward.amount;
       return {
         username: r.username,
         joinedAt: r.createdAt,
         qualifiedAt: qualifiedAt(db, r.id),
-        awards: awards.map((a) => ({ token: a.token, amount: a.amount })),
+        tokens: awards.map((a) => a.token),
+        reward,
       };
     })
     .sort((a, b) => b.joinedAt - a.joinedAt);
+
+  const iQualified = (db.referralAwards[me.id] ?? []).length > 0;
 
   const d = new Date(now);
   const y = d.getUTCFullYear();
@@ -76,9 +115,12 @@ function summarise(req: Request, db: Awaited<ReturnType<typeof getDb>>, me: DbAc
     link: `${origin}/login?ref=${encodeURIComponent(me.referralCode)}`,
     referrer: referrerOf(db, me)?.username ?? (me.referredBy ? me.referredBy : null),
     addCodeUntil: canAdd ? me.createdAt + REFERRAL_WINDOW_MS : null,
-    asReferee: db.referralAwards[me.id] ?? [],
+    perReferral: per,
+    sending: enabled,
+    myReward: me.referredBy ? rewardView(db.referralPayouts[`${me.id}:referee`], iQualified, per, enabled) : null,
     referees: rows,
-    asReferrer,
+    received,
+    owed,
     tiers: REFERRAL_TOKENS.map((t) => ({ token: t.token.code, tier2: t.tier2 })),
     month: {
       label: monthLabel(y, m),
@@ -110,6 +152,9 @@ export async function GET(req: Request) {
   const pending = refereesOf(db, me).filter((r) => !qualifiedAt(db, r.id)).slice(0, 25);
   await Promise.all([ensureReferralAwards(me), ...pending.map((r) => ensureReferralAwards(r))]);
 
+  // Real ITDB goes out after the response, so the page never waits on it.
+  after(() => settleReferralRewards().then(() => undefined, () => undefined));
+
   db = await getDb();
   return NextResponse.json(summarise(req, db, db.accounts.find((a) => a.id === id)!));
 }
@@ -140,6 +185,7 @@ export async function POST(req: Request) {
 
   const db = await getDb();
   const me = db.accounts.find((a) => a.id === id)!;
-  await ensureReferralAwards(me); // already at Tier 2? match it now
+  await ensureReferralAwards(me); // already at Tier 2? it qualifies now
+  after(() => settleReferralRewards().then(() => undefined, () => undefined));
   return NextResponse.json(summarise(req, await getDb(), me));
 }

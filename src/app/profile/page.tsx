@@ -126,7 +126,7 @@ export default function ProfilePage() {
       <p className="label mb-1.5 mt-5 px-1">Invite</p>
       <Link href="/referral" className="surface tap flex w-full items-center gap-3 p-4 text-left">
         <span className="min-w-0 flex-1">
-          <span className="block text-[13px] text-muted">Referral program · 100% match</span>
+          <span className="block text-[13px] text-muted">Referral program · ITDB rewards</span>
           <span className="font-display block text-[20px] font-semibold tracking-[0.08em] text-gold">
             {session.referralCode}
           </span>
