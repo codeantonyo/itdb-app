@@ -16,7 +16,7 @@ import {
 } from "@/lib/itdb/config";
 import { computeYield, programInputs, type YieldComputed } from "@/lib/server/accrual";
 import { milestonesFor, type Milestone } from "@/lib/itdb/milestones";
-import { earlyBirdMultiplier } from "@/lib/itdb/early-birds";
+import { tokenMultiplier } from "@/lib/itdb/early-birds";
 import { getDb } from "@/lib/server/db";
 import { getFx, type PriceSource } from "@/lib/server/fx";
 import { presaleView, type PresaleBonusView } from "@/lib/server/presale";
@@ -191,7 +191,7 @@ export async function GET(req: Request) {
     presale,
     bonus,
     backingUsd: qrsGoldBackingUsd(fx.metalUsdPerKg("gold")),
-    yield: computeYield("qrs", inputs.balance, inputs.since, db.qrs[id], fx, earlyBirdMultiplier(account.wallets)),
+    yield: computeYield("qrs", inputs.balance, inputs.since, db.qrs[id], fx, tokenMultiplier(account.wallets, "QRS")),
     gold,
     metals,
     reservesUsd: gold.valueUsd + metals.reduce((s, m) => s + m.valueUsd, 0),

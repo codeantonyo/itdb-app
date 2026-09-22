@@ -10,7 +10,7 @@ import {
   itdboneTierFor,
   qrsTierFor,
 } from "@/lib/itdb/config";
-import { earlyBirdMultiplier } from "@/lib/itdb/early-birds";
+import { tokenMultiplier } from "@/lib/itdb/early-birds";
 import { activeMultiplier, type ActiveMultiplier, type TokenCode } from "@/lib/itdb/milestones";
 import { firstAcquired } from "@/lib/stellar/acquired";
 import type { RegistryToken } from "@/lib/stellar/registry";
@@ -253,7 +253,7 @@ export async function collectYield(
       inputs.since,
       rec,
       fx,
-      earlyBirdMultiplier(account.wallets),
+      tokenMultiplier(account.wallets, TOKEN_OF[program]),
     );
     if (!computed.tier) {
       return {

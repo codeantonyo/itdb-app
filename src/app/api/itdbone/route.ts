@@ -11,7 +11,7 @@ import {
 } from "@/lib/itdb/config";
 import { computeYield, programInputs, type YieldComputed } from "@/lib/server/accrual";
 import { milestonesFor, type Milestone } from "@/lib/itdb/milestones";
-import { earlyBirdMultiplier } from "@/lib/itdb/early-birds";
+import { tokenMultiplier } from "@/lib/itdb/early-birds";
 import { getDb } from "@/lib/server/db";
 import { getFx } from "@/lib/server/fx";
 import { sessionAccountId } from "@/lib/server/session";
@@ -69,7 +69,7 @@ export async function GET(req: Request) {
       ? { ...withRange(nxt), needed: Math.max(itdboneRange(nxt).min - inputs.balance, 0) }
       : null,
     milestones: milestonesFor("ITDBONE"),
-    yield: computeYield("itdbone", inputs.balance, inputs.since, db.itdbone[id], fx, earlyBirdMultiplier(account.wallets)),
+    yield: computeYield("itdbone", inputs.balance, inputs.since, db.itdbone[id], fx, tokenMultiplier(account.wallets, "ITDBONE")),
     tiers: ITDBONE_TIERS.map(withRange),
   };
   return NextResponse.json(summary);

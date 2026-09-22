@@ -1,0 +1,9 @@
+{
+  "_comment": "QRS 25% bonus granted outside the Tier 1 rule. Read by the app (lib/itdb/grants.ts) and by scripts/qrs-holders-payout.mjs, so there is one list.",
+  "grants": {
+    "GDYGEUEO23AOGA7PTAGMA47ETUV6I2EGZZLMH5OF3WJSWKOPIFLJDQDM": {
+      "basisQrs": 8700,
+      "note": "Granted by Tony 2026-09-22. Held 8,700 QRS at bonus run 2 (2026-09-16 13:31Z), below Tier 1. Holds 153,500 now only because of the 2026-09-17 distributor transfers. 25% of 8,700 = 2,175. Set basisQrs to 153500 to pay 25% of today's balance (38,375) instead."
+    }
+  }
+}

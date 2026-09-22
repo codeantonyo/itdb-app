@@ -1,3 +1,5 @@
+import { TOKEN_MULTIPLIER_GRANTS, type GrantToken } from "./grants";
+
 /**
  * ITDB early-bird allowlist — the x10 LIFETIME MULTIPLIER.
  *
@@ -85,6 +87,9 @@ export const ITDB_EARLY_BIRDS: string[] = [
   "GDVZHZOSNVN3OT4R63A34WCEOZXH35W5AAUGMK3M7V23545EV4PBL7DI",
   "GAHJYGZCL6DDI23TMK5SQU23LX6M5N24C2MGU7COZHAWJYNQA3GQDOOS",
   "GAFVPBVY6NPXSD532BXBUHZ4C76PSY4CXL65AWA5EVXXZKSRSVYMNOP6",
+  // 2026-09-22 — added by hand: bought in the window but missed
+  // from the exports. Holds 500 ITDB.
+  "GBRPC2YBYNYC6KBU4JQPEUMRC4EQRIKUQMXGITGKRBFMLSOPZNULOQY6",
 ];
 
 const SET = new Set(ITDB_EARLY_BIRDS);
@@ -101,4 +106,20 @@ export function earlyBirdWallets(wallets: string[]): string[] {
  */
 export function earlyBirdMultiplier(wallets: string[]): number {
   return earlyBirdWallets(wallets).length > 0 ? EARLY_BIRD_MULTIPLIER : 1;
+}
+
+/**
+ * The reward multiplier for one token on this account.
+ *
+ * The ITDB early-bird x10 covers every token; a per-wallet grant covers
+ * only the tokens it names. Where both apply the HIGHER wins — they are
+ * two ways of being rewarded, not two rewards to multiply together.
+ */
+export function tokenMultiplier(wallets: string[], token: string): number {
+  let best = earlyBirdMultiplier(wallets);
+  for (const w of new Set(wallets)) {
+    const grant = TOKEN_MULTIPLIER_GRANTS[w]?.[token as GrantToken];
+    if (grant && grant > best) best = grant;
+  }
+  return best;
 }

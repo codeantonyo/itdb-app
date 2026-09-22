@@ -16,7 +16,7 @@ import {
   type ActiveMultiplier,
   type Milestone,
 } from "@/lib/itdb/milestones";
-import { earlyBirdMultiplier, earlyBirdWallets } from "@/lib/itdb/early-birds";
+import { earlyBirdWallets, tokenMultiplier } from "@/lib/itdb/early-birds";
 import { getDb } from "@/lib/server/db";
 import { getFx, type PriceSource } from "@/lib/server/fx";
 import { memberHoldings, tokenBalance } from "@/lib/server/holdings";
@@ -93,7 +93,7 @@ export async function GET(req: Request) {
   // The lifetime early-bird status is an ACCOUNT multiplier and stacks
   // on top of the token milestone, per Tony's "applies to everything".
   const ebWallets = earlyBirdWallets(account.wallets);
-  const accountMultiplier = earlyBirdMultiplier(account.wallets);
+  const accountMultiplier = tokenMultiplier(account.wallets, "ITDB");
 
   const basket: ItdbBasketLine[] = itdbBasket(balance).map(({ line, units: baseUnits }) => {
     const usdPerUnit = line.kind === "usd" ? 1 : fx.usdOf(line.ticker!);

@@ -52,7 +52,14 @@ try {
 } catch {
   die("The Stellar SDK is not installed. Run:  npm i -D @stellar/stellar-sdk");
 }
-const { Keypair, TransactionBuilder, Operation, Asset, Networks, BASE_FEE, Horizon } = sdk;
+const { Keypair, TransactionBuilder, Operation, Asset, Memo, Networks, BASE_FEE, Horizon } = sdk;
+
+/**
+ * Every bonus transaction carries this memo, so a later run can tell the
+ * bonus apart from any other QRS the same account sends. Without it the
+ * only way to know was a hand-kept list of transaction hashes.
+ */
+const BONUS_MEMO = "QRS25";
 
 const report = JSON.parse(readFileSync(file, "utf8"));
 const asset = report.asset ?? {};
@@ -191,7 +198,7 @@ for (const [i, batch] of batches.entries()) {
       Operation.payment({ destination: p.dest, asset: qrs, amount: p.row.bonusQrs.toFixed(7) }),
     );
   }
-  const built = tx.setTimeout(120).build();
+  const built = tx.addMemo(Memo.text(BONUS_MEMO)).setTimeout(120).build();
   built.sign(keypair);
   try {
     const res = await server.submitTransaction(built);

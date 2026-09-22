@@ -7,6 +7,7 @@ import {
   qrsBonusPayable,
   type QrsBonusCategory,
 } from "@/lib/itdb/qrs-bonus";
+import { QRS_BONUS_GRANTS } from "@/lib/itdb/grants";
 import { mutateDb, type DbAccount, type QrsBonusRecord } from "./db";
 
 /**
@@ -133,8 +134,13 @@ export async function ensureQrsBonus(
   firstAcquiredAt: number | null,
   qrsWallets: string[],
 ): Promise<QrsBonusView> {
-  const preview = qrsBonusView(existing, balance, firstAcquiredAt);
-  if (existing || preview.state !== "delivered" || firstAcquiredAt === null) return preview;
+  // A hand grant awards on its own stated basis, outside the Tier 1 rule.
+  const granted = account.wallets.find((w) => QRS_BONUS_GRANTS[w]);
+  const preview = granted
+    ? view({ state: "delivered", basisBalance: QRS_BONUS_GRANTS[granted].basisQrs })
+    : qrsBonusView(existing, balance, firstAcquiredAt);
+  if (existing) return qrsBonusView(existing, balance, firstAcquiredAt);
+  if (preview.state !== "delivered" || (!granted && firstAcquiredAt === null)) return preview;
 
   return mutateDb((db) => {
     // Re-check inside the mutation: a concurrent read may have awarded it.
@@ -148,17 +154,17 @@ export async function ensureQrsBonus(
       return view({ state: "duplicate", basisBalance: balance });
     }
 
-    const category = qrsBonusCategory(firstAcquiredAt);
-    if (!qrsBonusPayable(balance)) {
+    const basis = granted ? QRS_BONUS_GRANTS[granted].basisQrs : balance;
+    if (!granted && !qrsBonusPayable(balance)) {
       return qrsBonusView(undefined, balance, firstAcquiredAt);
     }
 
     const record: QrsBonusRecord = {
       awardedAt: Date.now(),
-      category,
-      basisBalance: balance,
-      bonusQrs: qrsBonusAmount(balance),
-      wallets: qrsWallets,
+      category: firstAcquiredAt === null ? "existing" : qrsBonusCategory(firstAcquiredAt),
+      basisBalance: basis,
+      bonusQrs: qrsBonusAmount(basis),
+      wallets: granted ? [granted] : qrsWallets,
     };
     db.qrsBonuses[account.id] = record;
     return qrsBonusView(record, balance, firstAcquiredAt);
