@@ -189,9 +189,10 @@ function MatchBonus({ s }: { s: ReferralSummary }) {
       <SectionHeader title="Referral rewards" note={`${per} ITDB each`} />
       <div className="surface p-5">
         <p className="text-[13.5px] leading-relaxed text-muted">
-          Every referral who reaches Tier 2 earns <span className="font-semibold text-primary">{per} ITDB for you</span>{" "}
-          and <span className="font-semibold text-primary">{per} ITDB for them</span>, sent straight to your wallets
-          on the Stellar network.
+          Every referral who reaches Tier 2 and holds {per} ITDB for {s.holdDays} days earns{" "}
+          <span className="font-semibold text-primary">{per} ITDB for you</span> and{" "}
+          <span className="font-semibold text-primary">{per} ITDB for them</span>, sent straight to your wallets on the
+          Stellar network.
         </p>
 
         {(s.received > 0 || s.owed > 0) && (
@@ -213,7 +214,7 @@ function MatchBonus({ s }: { s: ReferralSummary }) {
               <p className="text-[14.5px] font-semibold text-primary">Your welcome reward</p>
               <p className="text-[12.5px] text-muted">
                 {s.myReward.status === "waiting"
-                  ? `${per} ITDB once you reach Tier 2`
+                  ? `${per} ITDB once you have held ${per} ITDB for ${s.holdDays} days`
                   : s.myReward.note ?? `${per} ITDB for joining through ${s.referrer ?? "a referral"}`}
               </p>
             </div>
@@ -247,7 +248,7 @@ function YourReferrals({ s }: { s: ReferralSummary }) {
                 <p className="truncate text-[15px] font-semibold text-primary">{r.username}</p>
                 <p className="text-[12.5px] text-muted">
                   {r.qualifiedAt
-                    ? `Tier 2 in ${r.tokens.join(", ")} · ${formatAmount(r.reward.amount, 0)} ITDB for you`
+                    ? `Tier 2 in ${r.tokens.join(", ")} · ${r.reward.status === "waiting" ? r.reward.note : `${formatAmount(r.reward.amount, 0)} ITDB for you`}`
                     : r.reward.note}
                   {r.reward.status === "blocked" && r.reward.note && ` · ${r.reward.note}`}
                 </p>
@@ -329,8 +330,9 @@ function Rules({ s }: { s: ReferralSummary }) {
           <li>1. Share your link or code.</li>
           <li>2. Your friend joins and connects their wallet — or adds your code in their first 24 hours.</li>
           <li>
-            3. When they reach Tier 2 in any ITDB token, you both receive {formatAmount(s.perReferral, 0)} ITDB,
-            sent to your wallets automatically.
+            3. When they reach Tier 2 in any ITDB token and have held {formatAmount(s.perReferral, 0)} ITDB for{" "}
+            {s.holdDays} days without a break, you both receive {formatAmount(s.perReferral, 0)} ITDB, sent to your
+            wallets automatically.
           </li>
         </ol>
         <p className="label mt-4">Tier 2 starts at</p>
@@ -343,7 +345,8 @@ function Rules({ s }: { s: ReferralSummary }) {
         </div>
         <p className="mt-4 text-[12.5px] leading-relaxed text-muted-2">
           Self-referrals, accounts sharing a wallet with their referrer, referral rings and wallets already counted for
-          someone else are disqualified automatically.
+          someone else are disqualified automatically. The holding is checked on chain: ITDB moved out during the{" "}
+          {s.holdDays} days restarts the clock.
         </p>
       </div>
     </section>

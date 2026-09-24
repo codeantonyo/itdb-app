@@ -12,7 +12,7 @@ import {
   referrerOf,
   type LeaderRow,
 } from "@/lib/server/referral";
-import { payoutConfig, settleReferralRewards } from "@/lib/server/referral-payout";
+import { HOLD_DAYS, payoutConfig, settleReferralRewards } from "@/lib/server/referral-payout";
 import { sessionAccountId } from "@/lib/server/session";
 
 /** Room for a few Stellar payments after the response has gone. */
@@ -46,8 +46,10 @@ export interface ReferralSummary {
   referrer: string | null;
   /** Until when I may still add a code, or null when I no longer can */
   addCodeUntil: number | null;
-  /** ITDB per side, per qualified referral */
+  /** ITDB per side, per qualified referral; also what the new member must hold */
   perReferral: number;
+  /** Days they must hold it, unbroken, before either side is paid */
+  holdDays: number;
   /** Whether rewards are being sent on chain right now */
   sending: boolean;
   /** My own reward for joining through a referral, once I qualify */
@@ -66,11 +68,13 @@ const monthLabel = (y: number, m: number) =>
   new Date(Date.UTC(y, m, 1)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
 function rewardView(p: ReferralPayout | undefined, qualified: boolean, amount: number, enabled: boolean): RewardView {
-  if (!qualified) return { amount, status: "waiting", note: "Paid once they reach Tier 2" };
+  const hold = `once ${amount.toLocaleString("en-US")} ITDB is held for ${HOLD_DAYS} days`;
+  if (!qualified) return { amount, status: "waiting", note: `Tier 2, then paid ${hold}` };
   if (p?.status === "paid") return { amount: p.amount, status: "paid", txHash: p.txHash };
   if (p?.status === "pending") return { amount, status: "sending" };
   if (p?.status === "failed" && !p.operator)
     return { amount, status: "blocked", note: p.error ?? "Will be retried automatically" };
+  if (!p) return { amount, status: "waiting", note: `Paid ${hold}` };
   return { amount, status: "queued", note: enabled ? "Sending shortly" : "Sending starts soon" };
 }
 
@@ -116,6 +120,7 @@ function summarise(req: Request, db: Awaited<ReturnType<typeof getDb>>, me: DbAc
     referrer: referrerOf(db, me)?.username ?? (me.referredBy ? me.referredBy : null),
     addCodeUntil: canAdd ? me.createdAt + REFERRAL_WINDOW_MS : null,
     perReferral: per,
+    holdDays: HOLD_DAYS,
     sending: enabled,
     myReward: me.referredBy ? rewardView(db.referralPayouts[`${me.id}:referee`], iQualified, per, enabled) : null,
     referees: rows,

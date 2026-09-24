@@ -1,15 +1,26 @@
 import { randomBytes } from "crypto";
 import { Asset, BASE_FEE, Horizon, Keypair, Memo, Networks, Operation, TransactionBuilder } from "@stellar/stellar-sdk";
 import { ITDB_TOKEN } from "@/lib/stellar/registry";
-import { mutateDb, type DbShape, type ReferralPayout } from "./db";
+import { getDb, mutateDb, type DbShape, type ReferralPayout } from "./db";
+import { qualifiedAt } from "./referral";
 
 /**
  * REAL ON-CHAIN referral rewards — ITDB sent from a rewards account.
  *
  * Every qualified referral pays 10,000 ITDB to the referrer and the same
- * to the new member, from the account whose key is DISTRIBUTOR_SECRET
+ * to the new member, from the ITDB distributor whose key is ITDB_SECRET
  * (or ITDB_REWARDS_SECRET, which overrides it, should rewards ever move to
  * a dedicated account). With neither set, nothing is sent.
+ *
+ * ANTI-FARMING. Tier 2 costs a few dollars and balances can be moved, so
+ * qualifying alone pays nothing. The new member must also have HELD at
+ * least one reward's worth of ITDB (10,000, as in the program's own
+ * example) without a break for HOLD_DAYS, proven from their wallets'
+ * on-chain history. The same coins cannot sit in two wallets at once, so
+ * one bag passed from fresh account to fresh account earns once per
+ * HOLD_DAYS, not once a minute. With the once-per-wallet rule and the
+ * daily cap that bounds what a farm can take; it cannot make one
+ * impossible, since nothing on chain proves a separate person.
  *
  * Three rules this is built around, because money that leaves on chain
  * does not come back:
@@ -38,6 +49,13 @@ const RETRY_MS = 60 * 60_000;
 const MAX_PER_RUN = 4;
 const DAY_MS = 86_400_000;
 const MEMO_PREFIX = "ITDB REF ";
+/** How long the new member must hold a reward's worth of ITDB first. */
+export const HOLD_DAYS = 7;
+const HOLD_MS = HOLD_DAYS * DAY_MS;
+/** Hold checks per run: each is a few Horizon reads. */
+const HOLD_CHECKS_PER_RUN = 6;
+/** Effect pages read per wallet before giving up on proving a hold. */
+const HOLD_PAGES = 5;
 
 export interface PayoutConfig {
   secret: string;
@@ -50,7 +68,7 @@ export interface PayoutConfig {
 
 /** Settings from the environment, or null when payouts are switched off. */
 export function payoutConfig(env: NodeJS.ProcessEnv = process.env): PayoutConfig | null {
-  const secret = (env.ITDB_REWARDS_SECRET || env.DISTRIBUTOR_SECRET)?.trim();
+  const secret = (env.ITDB_REWARDS_SECRET || env.ITDB_SECRET)?.trim();
   if (!secret || env.ITDB_REWARDS_PAUSED === "1") return null;
   const testnet = env.STELLAR_NETWORK === "testnet";
   return {
@@ -69,10 +87,10 @@ export function configProblem(cfg: PayoutConfig): string | null {
   try {
     pub = Keypair.fromSecret(cfg.secret).publicKey();
   } catch {
-    return "ITDB_REWARDS_SECRET is not a valid Stellar secret key.";
+    return "ITDB_SECRET is not a valid Stellar secret key.";
   }
   if (pub === cfg.asset.issuer)
-    return "ITDB_REWARDS_SECRET is the ITDB issuer — that would mint. Use a funded rewards account.";
+    return "ITDB_SECRET is the ITDB issuer — that would mint. Use the distributor key.";
   if (!(cfg.perReferral > 0) || !(cfg.dailyCap >= cfg.perReferral))
     return "The reward amount and daily cap must be positive, and the cap at least one reward.";
   return null;
@@ -94,8 +112,12 @@ const newId = () => randomBytes(6).toString("hex").slice(0, 10);
 /**
  * Pick the rewards to send now and mark them "pending", in place on `db`.
  * Call inside mutateDb so the claim and the check happen under one lock.
+ *
+ * `held` is the referees whose hold was just proven on chain. A referral
+ * with neither side started must be in it; once one side has been claimed
+ * the hold is proven, and the other side follows without a re-check.
  */
-export function claimPayouts(db: DbShape, cfg: PayoutConfig, now: number): Claimed[] {
+export function claimPayouts(db: DbShape, cfg: PayoutConfig, now: number, held: ReadonlySet<string>): Claimed[] {
   // Everything paid or in flight in the last 24 hours counts against the cap.
   let budget =
     cfg.dailyCap -
@@ -109,6 +131,7 @@ export function claimPayouts(db: DbShape, cfg: PayoutConfig, now: number): Claim
     const referee = db.accounts.find((a) => a.id === refereeId);
     const referrer = db.accounts.find((a) => a.id === awards[0].referrerId);
     if (!referee || !referrer) continue;
+    if (!started(db, refereeId) && !held.has(refereeId)) continue;
 
     for (const [role, who] of [["referee", referee], ["referrer", referrer]] as const) {
       if (out.length >= MAX_PER_RUN) return out;
@@ -177,6 +200,90 @@ export async function findByMemo(cfg: PayoutConfig, id: string): Promise<string 
     (p) => (p as unknown as { transaction_attr?: { memo?: string } }).transaction_attr?.memo === MEMO_PREFIX + id,
   );
   return hit ? hit.transaction_hash : null;
+}
+
+const started = (db: DbShape, refereeId: string) =>
+  Boolean(db.referralPayouts[`${refereeId}:referee`] || db.referralPayouts[`${refereeId}:referrer`]);
+
+/** One Horizon effect: the fields the hold check reads. */
+export interface Effect {
+  type: string;
+  created_at: string;
+  amount?: string;
+  asset_code?: string;
+  asset_issuer?: string;
+  sold_asset_code?: string;
+  sold_asset_issuer?: string;
+  sold_amount?: string;
+  bought_asset_code?: string;
+  bought_asset_issuer?: string;
+  bought_amount?: string;
+}
+
+export interface Walk {
+  /** Balance just before the oldest effect read so far */
+  bal: number;
+  /** Lowest balance seen */
+  min: number;
+  /** Reached `since`, so `min` covers the whole window */
+  reached: boolean;
+}
+
+/**
+ * Walk a wallet's balance of `asset` back through its effects, newest
+ * first, down to `since`, keeping the lowest point. Pure. Null for a move
+ * it cannot follow (liquidity pools), which counts as not held.
+ */
+export function walkBack(from: Walk, effects: Effect[], since: number, asset: { code: string; issuer: string }): Walk | null {
+  const is = (c?: string, i?: string) => c === asset.code && i === asset.issuer;
+  let { bal, min } = from;
+  for (const e of effects) {
+    if (Date.parse(e.created_at) < since) return { bal, min, reached: true };
+    if (e.type === "account_credited" && is(e.asset_code, e.asset_issuer)) bal -= Number(e.amount);
+    else if (e.type === "account_debited" && is(e.asset_code, e.asset_issuer)) bal += Number(e.amount);
+    else if (e.type === "trade") {
+      if (is(e.bought_asset_code, e.bought_asset_issuer)) bal -= Number(e.bought_amount);
+      if (is(e.sold_asset_code, e.sold_asset_issuer)) bal += Number(e.sold_amount);
+    } else if (e.type.startsWith("liquidity_pool")) return null; // ponytail: pools not followed; such wallets never qualify
+    min = Math.min(min, bal);
+  }
+  return { bal, min, reached: false };
+}
+
+/**
+ * Did these wallets together hold at least `amount` ITDB for the whole of
+ * the last HOLD_DAYS? Summed per wallet (each wallet's own low point),
+ * which is strict when a member moves coins between their own wallets.
+ * Anything Horizon cannot answer is a no for this run, never a yes.
+ */
+export async function heldThroughout(cfg: PayoutConfig, wallets: string[], amount: number, now: number): Promise<boolean> {
+  const server = new Horizon.Server(cfg.horizon);
+  const since = now - HOLD_MS;
+  let total = 0;
+  try {
+    for (const w of wallets) {
+      const acct = await server.loadAccount(w);
+      const line = acct.balances.find(
+        (b) => "asset_code" in b && b.asset_code === cfg.asset.code && b.asset_issuer === cfg.asset.issuer,
+      );
+      const balance = line ? Number(line.balance) : 0;
+      if (balance <= 0) continue; // its low point is at most today's zero
+
+      let walk: Walk | null = { bal: balance, min: balance, reached: false };
+      let page = await server.effects().forAccount(w).order("desc").limit(200).call();
+      for (let n = 0; walk && !walk.reached && n < HOLD_PAGES; n++) {
+        const recs = page.records as unknown as Effect[];
+        walk = walkBack(walk, recs, since, cfg.asset);
+        if (walk && !walk.reached && recs.length < 200) walk.reached = true; // start of its history
+        else if (walk && !walk.reached) page = await page.next();
+      }
+      if (!walk?.reached) return false; // unfollowable, or too busy to prove
+      total += Math.max(walk.min, 0);
+    }
+  } catch {
+    return false;
+  }
+  return total >= amount;
 }
 
 /** Send one reward. Refuses rather than guesses on anything unexpected. */
@@ -250,7 +357,8 @@ export async function settleReferralRewards(now = Date.now()): Promise<SettleRep
   const problem = configProblem(cfg);
   if (problem) return { ...report, enabled: false, problem };
 
-  const claimed = await mutateDb((db) => claimPayouts(db, cfg, now));
+  const held = await provenHolds(cfg, now);
+  const claimed = await mutateDb((db) => claimPayouts(db, cfg, now, held));
 
   for (const c of claimed) {
     let result: SendResult;
@@ -297,6 +405,30 @@ export async function settleReferralRewards(now = Date.now()): Promise<SettleRep
   return report;
 }
 
+/** When each referee's hold was last checked, so a failing one is not re-read every run. */
+// ponytail: per-instance memory; a cold start re-checks early, which only costs Horizon reads.
+const holdCheckedAt = new Map<string, number>();
+
+/** The qualified referees not yet started whose hold is proven on chain now. */
+async function provenHolds(cfg: PayoutConfig, now: number): Promise<Set<string>> {
+  const db = await getDb();
+  const due = Object.keys(db.referralAwards)
+    .filter((id) => {
+      const q = qualifiedAt(db, id);
+      return q !== null && !started(db, id) && now - (holdCheckedAt.get(id) ?? 0) >= RETRY_MS;
+    })
+    .sort((a, b) => (holdCheckedAt.get(a) ?? 0) - (holdCheckedAt.get(b) ?? 0))
+    .slice(0, HOLD_CHECKS_PER_RUN);
+
+  const held = new Set<string>();
+  for (const id of due) {
+    holdCheckedAt.set(id, now);
+    const acct = db.accounts.find((a) => a.id === id);
+    if (acct && (await heldThroughout(cfg, acct.wallets, cfg.perReferral, now))) held.add(id);
+  }
+  return held;
+}
+
 /* ------------------------------------------------------------------ */
 /*  4. A look without touching anything                                */
 /* ------------------------------------------------------------------ */
@@ -324,7 +456,7 @@ export async function payoutStatus(db: DbShape): Promise<PayoutStatus> {
     dailyCap: cfg?.dailyCap ?? 100_000,
     owed: Math.max(qualified * 2 - paid, 0),
   };
-  if (!cfg) return { enabled: false, problem: "No DISTRIBUTOR_SECRET set.", from: null, float: null, ...base };
+  if (!cfg) return { enabled: false, problem: "No ITDB_SECRET set.", from: null, float: null, ...base };
 
   const problem = configProblem(cfg);
   if (problem) return { enabled: false, problem, from: null, float: null, ...base };

@@ -2,9 +2,11 @@
 import assert from "node:assert/strict";
 import { Keypair } from "@stellar/stellar-sdk";
 import type { DbShape } from "@/lib/server/db";
-import { claimPayouts, configProblem, payoutConfig, type PayoutConfig } from "@/lib/server/referral-payout";
+import { claimPayouts as claim, configProblem, payoutConfig, walkBack, type Effect, type PayoutConfig } from "@/lib/server/referral-payout";
 
 const T = Date.UTC(2026, 8, 22, 12);
+const BOTH = new Set(["bob", "carol"]);
+const claimPayouts = (db: DbShape, c: PayoutConfig, now: number) => claim(db, c, now, BOTH);
 const MIN = 60_000;
 const cfg: PayoutConfig = {
   secret: Keypair.random().secret(), perReferral: 10_000, dailyCap: 30_000,
@@ -26,13 +28,18 @@ const env = payoutConfig({ ITDB_REWARDS_SECRET: cfg.secret } as unknown as NodeJ
 assert.equal(env.perReferral, 10_000, "10,000 ITDB per side by default");
 assert.equal(env.dailyCap, 100_000, "works with no cap set");
 assert.equal(
-  payoutConfig({ DISTRIBUTOR_SECRET: cfg.secret } as unknown as NodeJS.ProcessEnv)?.secret,
+  payoutConfig({ ITDB_SECRET: cfg.secret } as unknown as NodeJS.ProcessEnv)?.secret,
   cfg.secret,
-  "DISTRIBUTOR_SECRET alone switches payouts on",
+  "ITDB_SECRET alone switches payouts on",
+);
+assert.equal(
+  payoutConfig({ DISTRIBUTOR_SECRET: cfg.secret } as unknown as NodeJS.ProcessEnv),
+  null,
+  "the airdrop distributor key is never used for ITDB",
 );
 const other = Keypair.random().secret();
 assert.equal(
-  payoutConfig({ DISTRIBUTOR_SECRET: cfg.secret, ITDB_REWARDS_SECRET: other } as unknown as NodeJS.ProcessEnv)?.secret,
+  payoutConfig({ ITDB_SECRET: cfg.secret, ITDB_REWARDS_SECRET: other } as unknown as NodeJS.ProcessEnv)?.secret,
   other,
   "a dedicated rewards key overrides it",
 );
@@ -90,4 +97,35 @@ assert.ok(stuck.every((c) => c.recover), "as recoveries, not new sends");
 const db4 = { ...fresh(), referralAwards: { bob: [] } } as unknown as DbShape;
 assert.equal(claimPayouts(db4, cfg, T).length, 0, "no Tier 2, no reward");
 
-console.log("ok — payouts: off without a key, both sides once, capped, in-flight never re-claimed, timeouts recovered by memo");
+// --- anti-farming: nothing pays until the hold is proven ---------------
+const db6 = fresh();
+assert.equal(claim(db6, cfg, T, new Set()).length, 0, "qualified but hold not proven: nothing");
+const only = claim(db6, { ...cfg, dailyCap: 10_000 }, T, new Set(["bob"]));
+assert.deepEqual(only.map((c) => c.key), ["bob:referee"], "proven hold pays; cap allows one side");
+Object.assign(db6.referralPayouts["bob:referee"], { status: "paid", paidAt: T });
+assert.deepEqual(
+  claim(db6, cfg, T + 25 * 60 * MIN, new Set()).map((c) => c.key),
+  ["bob:referrer"],
+  "the other side follows without a second hold check",
+);
+
+// --- the hold walk: balance history rebuilt from effects ----------------
+const A = cfg.asset;
+const at = (h: number) => new Date(T - h * 3_600_000).toISOString();
+const cr = (h: number, amount: number): Effect => ({ type: "account_credited", created_at: at(h), amount: String(amount), asset_code: A.code, asset_issuer: A.issuer });
+const db_ = (h: number, amount: number): Effect => ({ type: "account_debited", created_at: at(h), amount: String(amount), asset_code: A.code, asset_issuer: A.issuer });
+const since = T - 7 * 24 * 3_600_000;
+const start = (b: number) => ({ bal: b, min: b, reached: false });
+// Held 12,000 since before the window: low point 12,000.
+assert.equal(walkBack(start(12_000), [cr(200, 12_000)], since, A)?.min, 12_000);
+// Bag arrived 2 days ago: before that the wallet held 0.
+assert.equal(walkBack(start(12_000), [cr(48, 12_000)], since, A)?.min, 0, "fresh bag: not held for the window");
+// Moved out and back mid-window (the farm): low point 0.
+assert.equal(walkBack(start(10_000), [cr(24, 10_000), db_(72, 10_000), cr(200, 10_000)], since, A)?.min, 0, "out and back resets");
+// Bought on the DEX 10 days ago, other assets ignored.
+const buy: Effect = { type: "trade", created_at: at(240), bought_asset_code: A.code, bought_asset_issuer: A.issuer, bought_amount: "10000", sold_asset_code: undefined, sold_amount: "50" };
+const junk: Effect = { type: "account_credited", created_at: at(5), amount: "999", asset_code: "XRP", asset_issuer: "GX" };
+assert.equal(walkBack(start(10_000), [junk, buy], since, A)?.min, 10_000, "a buy before the window counts");
+assert.equal(walkBack(start(10_000), [{ type: "liquidity_pool_deposited", created_at: at(3) }], since, A), null, "pools are not followed");
+
+console.log("ok — payouts: off without a key, both sides once, capped, in-flight never re-claimed, timeouts recovered by memo, nothing before a proven 7-day hold");
