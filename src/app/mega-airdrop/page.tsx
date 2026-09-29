@@ -160,11 +160,6 @@ export default function MegaAirdropPage() {
           </p>
         )}
       </div>
-
-      <p className="px-1 text-[12.5px] leading-relaxed text-muted-2">
-        Holdings are read from every wallet linked to your account. Every figure here is simulated — nothing is sent on
-        chain and no metal is reserved.
-      </p>
     </div>
   );
 }
