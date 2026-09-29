@@ -1,6 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
+import { ChevronRight, Gift } from "lucide-react";
+import type { MegaSummary } from "@/app/api/mega-airdrop/route";
 import { AppBar } from "@/components/layout/app-bar";
 import { AssetRow } from "@/components/shared/asset-row";
 import { ExactFigure } from "@/components/shared/exact-figure";
@@ -8,6 +11,7 @@ import { NetworkNotice } from "@/components/shared/network-notice";
 import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePortfolio } from "@/lib/client/portfolio";
+import { useJson } from "@/lib/client/use-json";
 import { formatCurrency, formatExactCurrency, formatPercent } from "@/lib/format";
 import { itdbTierFor, itdboneTierFor, qrsTierFor } from "@/lib/itdb/config";
 import { cn } from "@/lib/utils";
@@ -26,6 +30,7 @@ const HREF_OF: Record<string, string> = {
 
 export default function PortfolioPage() {
   const portfolio = usePortfolio();
+  const mega = useJson<MegaSummary>("/api/mega-airdrop", 300_000);
   const [view, setView] = useState<"all" | "reserve">("all");
 
   const pending = portfolio.loading && portfolio.assets.length === 0;
@@ -70,6 +75,22 @@ export default function PortfolioPage() {
           </>
         )}
       </section>
+
+      {mega.data?.claimedAt && (
+        <Link
+          href="/mega-airdrop"
+          className="surface mt-4 flex items-center gap-3.5 p-4 transition-opacity active:opacity-70"
+        >
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-success-soft text-success">
+            <Gift className="size-[21px]" strokeWidth={1.9} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15.5px] font-semibold tracking-wide text-primary">MEGA AIRDROP</span>
+            <span className="block text-[13px] text-muted">50 tonnes of assets being allocated to your vault</span>
+          </span>
+          <ChevronRight className="size-4 shrink-0 text-muted-2" />
+        </Link>
+      )}
 
       {unavailable && <NetworkNotice className="mt-4" message={portfolio.error} onRetry={portfolio.refresh} />}
 

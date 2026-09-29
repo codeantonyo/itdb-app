@@ -307,6 +307,20 @@ export default function RewardsPage() {
         <ChevronRight className="size-4 shrink-0 text-muted-2" />
       </Link>
 
+      <Link
+        href="/mega-airdrop"
+        className="surface mt-3 flex items-center gap-3.5 p-4 transition-opacity active:opacity-70"
+      >
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-gold-soft text-gold">
+          <Gift className="size-[21px]" strokeWidth={1.9} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[15.5px] font-semibold tracking-wide text-primary">MEGA AIRDROP</span>
+          <span className="block text-[13px] text-muted">Exclusive to ITDB Vault holders</span>
+        </span>
+        <ChevronRight className="size-4 shrink-0 text-muted-2" />
+      </Link>
+
       {/* ---------------- One section per token, never mixed ---------------- */}
       <div className="mt-4 flex flex-col gap-4">
         {itdb.data ? (

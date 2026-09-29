@@ -297,6 +297,8 @@ export interface DbShape {
   referralAwards: Record<string, ReferralAward[]>;
   /** On-chain referral rewards, keyed by `${refereeId}:${role}` */
   referralPayouts: Record<string, ReferralPayout>;
+  /** Mega Airdrop claims, keyed by accountId. Presence is the claim. */
+  megaAirdrops: Record<string, { claimedAt: number }>;
 }
 
 const DB_DIR = path.join(process.cwd(), "data");
@@ -346,6 +348,7 @@ const emptyDb = (): DbShape => ({
   vaultClaims: {},
   referralAwards: {},
   referralPayouts: {},
+  megaAirdrops: {},
 });
 
 const obj = <T>(v: unknown, fallback: T): T =>
@@ -398,6 +401,7 @@ function normalizeDb(db: Partial<DbShape>): DbShape {
     vaultClaims: normalizeVaults(obj(db.vaultClaims, {})),
     referralAwards: obj(db.referralAwards, {}),
     referralPayouts: obj(db.referralPayouts, {}),
+    megaAirdrops: obj(db.megaAirdrops, {}),
   };
 }
 
@@ -576,6 +580,8 @@ function splitDb(db: DbShape): Map<string, string> {
     out.set(`refaward:${id}`, JSON.stringify(r));
   for (const [key, p] of Object.entries(db.referralPayouts))
     out.set(`refpay:${key}`, JSON.stringify(p));
+  for (const [id, m] of Object.entries(db.megaAirdrops))
+    out.set(`mega:${id}`, JSON.stringify(m));
   return out;
 }
 
@@ -615,6 +621,8 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
       db.referralAwards[shard.slice(9)] = value as ReferralAward[];
     else if (shard.startsWith("refpay:"))
       db.referralPayouts[shard.slice(7)] = value as ReferralPayout;
+    else if (shard.startsWith("mega:"))
+      db.megaAirdrops[shard.slice(5)] = value as { claimedAt: number };
   }
   db.accounts.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   return normalizeDb(db);
@@ -626,7 +634,7 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
  * deployment's shards survive a brief old/new instance overlap.
  */
 const OWNED_SHARD_RE =
-  /^(meta|otps|otpThrottle|loginThrottle|acquired)$|^(account|userstate|ledger|itdbone|qrs|airdrop|presale|qrsbonus|vault|refaward|refpay):/;
+  /^(meta|otps|otpThrottle|loginThrottle|acquired)$|^(account|userstate|ledger|itdbone|qrs|airdrop|presale|qrsbonus|vault|refaward|refpay|mega):/;
 
 function entryFromRow(row: {
   shard: string;
