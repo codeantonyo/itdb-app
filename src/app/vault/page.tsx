@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Pencil, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { ChevronRight, Pencil, ShieldCheck } from "lucide-react";
 import type { VaultSummary } from "@/app/api/vault/route";
 import { AppBar } from "@/components/layout/app-bar";
 import { NetworkNotice } from "@/components/shared/network-notice";
@@ -16,12 +17,14 @@ import {
   WhatYouReceive,
 } from "@/components/vault/vault-sections";
 import { Panel } from "@/components/ui/panel";
+import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJson } from "@/lib/client/use-json";
 import { formatAmount } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const label = (n: number) => `#${String(n).padStart(3, "0")}`;
+const pad = (n: number) => String(n).padStart(3, "0");
+const label = (n: number) => `#${pad(n)}`;
 
 /**
  * Count from the last value to the next one instead of jumping. Only the
@@ -51,20 +54,20 @@ function useCountTo(target: number | null, ms = 900): number {
   return shown ?? target ?? 0;
 }
 
-/** A free-number field shared by claiming and editing. */
-function useNumberField(taken: number[], total: number, own?: number) {
+/** A free-number field shared by claiming and editing, for one wave's range. */
+function useNumberField(taken: number[], from: number, to: number, own?: number) {
   const [raw, setRaw] = useState("");
   const parsed = Number.parseInt(raw, 10);
   const ownedByOther = taken.includes(parsed) && parsed !== own;
-  const valid = Number.isInteger(parsed) && parsed >= 1 && parsed <= total && !ownedByOther;
+  const valid = Number.isInteger(parsed) && parsed >= from && parsed <= to && !ownedByOther;
   const hint =
     raw === ""
-      ? `Any free number, 001 to ${String(total).padStart(3, "0")}`
+      ? `Any free number, ${pad(from)} to ${pad(to)}`
       : valid
         ? `${label(parsed)} is free`
         : ownedByOther
           ? `${label(parsed)} is already owned`
-          : `Numbers run from 001 to ${String(total).padStart(3, "0")}`;
+          : `Numbers here run from ${pad(from)} to ${pad(to)}`;
   return { raw, setRaw, value: valid ? parsed : null, hint, invalid: raw !== "" && !valid };
 }
 
@@ -84,16 +87,21 @@ export default function VaultPage() {
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
+  // Wave 2 is the one with room; wave 1 is a tap away.
+  const [waveNo, setWaveNo] = useState<1 | 2>(2);
 
   const s = vault.data;
   const available = useCountTo(s?.available ?? null);
-  const num = useNumberField(s?.takenNumbers ?? [], s?.total ?? 500);
+  const wave = s?.waves.find((w) => w.wave === waveNo) ?? { wave: waveNo, from: 1, to: 500, choose: false, available: 0 };
+  const num = useNumberField(s?.takenNumbers ?? [], wave.from, wave.to);
 
   const held = s?.vaults.length ?? 0;
   const canClaim = !!s && held < s.allowed && s.available > 0;
-  // Derived, so a city that fills while the page is open drops out of the
-  // selection instead of failing at the moment of claiming.
-  const city = canClaim && picked && (s?.remaining[picked] ?? 0) > 0 ? picked : null;
+  // Derived, so a city that fills while the page is open — or belongs to
+  // the other wave — drops out of the selection instead of failing at
+  // the moment of claiming.
+  const inWave = (c: string) => s?.branches.find((b) => b.city === c)?.wave === waveNo;
+  const city = canClaim && picked && inWave(picked) && (s?.remaining[picked] ?? 0) > 0 ? picked : null;
 
   const run = async (method: "POST" | "PATCH", body: object, after?: () => void) => {
     setBusy(true);
@@ -112,7 +120,7 @@ export default function VaultPage() {
 
   const claim = () =>
     city &&
-    run("POST", { city, ...(s?.canChooseNumbers && num.value ? { number: num.value } : {}) }, () => {
+    run("POST", { city, ...(wave.choose && num.value ? { number: num.value } : {}) }, () => {
       setPicked(null);
       num.setRaw("");
     });
@@ -133,7 +141,7 @@ export default function VaultPage() {
 
           <div className="mt-3 flex items-center justify-center gap-5 text-[13.5px]">
             <p className="text-primary">
-              Total Vaults: <span className="tnum font-semibold">{formatAmount(s?.total ?? 500, 0)}</span>
+              Total Vaults: <span className="tnum font-semibold">{formatAmount(s?.total ?? 1000, 0)}</span>
             </p>
             <span className="h-3 w-px bg-hairline" />
             <p className="text-primary">
@@ -146,14 +154,45 @@ export default function VaultPage() {
             </p>
           </div>
 
+          <Segmented
+            className="mx-auto mt-4 max-w-[340px]"
+            value={String(waveNo)}
+            onChange={(v) => {
+              setWaveNo(v === "1" ? 1 : 2);
+              num.setRaw("");
+            }}
+            options={[
+              { value: "1", label: "Wave 1 · 001–500" },
+              { value: "2", label: "Wave 2 · 501–1000" },
+            ]}
+          />
+
           <VaultMap
             className="mt-3"
+            wave={waveNo}
             remaining={s?.remaining}
             selected={city}
             onSelect={canClaim ? (c) => setPicked((prev) => (prev === c ? null : c)) : undefined}
           />
+          {s && (
+            <p className="tnum mt-1 text-center text-[12.5px] text-muted">
+              Wave {waveNo}: {formatAmount(wave.available, 0)} of {formatAmount(wave.to - wave.from + 1, 0)} vaults
+              free · {wave.choose ? "you choose your number" : "numbers assigned at random"}
+            </p>
+          )}
         </div>
       </section>
+
+      <Link
+        href="/mega-airdrop"
+        className="surface flex items-center justify-between gap-3 px-4 py-3.5 transition-opacity active:opacity-70"
+      >
+        <span>
+          <span className="block text-[14.5px] font-bold tracking-wide text-gold">MEGA AIRDROP</span>
+          <span className="block text-[12.5px] text-muted">Exclusive to ITDB Vault holders — 50% milestone reached</span>
+        </span>
+        <ChevronRight className="size-4 shrink-0 text-muted-2" />
+      </Link>
 
       {vault.error && !s && <NetworkNotice message={vault.error} onRetry={vault.refresh} />}
 
@@ -202,19 +241,20 @@ export default function VaultPage() {
 
           {canClaim ? (
             <div className="flex flex-col gap-2">
-              {s.canChooseNumbers && (
+              {wave.choose && (
                 <label className="surface flex items-center gap-3 p-3.5">
                   <span className="min-w-0 flex-1">
                     <span className="block text-[14px] font-semibold text-primary">
-                      Your vault number <span className="text-gold">· early bird</span>
+                      Your vault number{" "}
+                      <span className="text-gold">· {wave.wave === 2 ? `wave 2` : "early bird"}</span>
                     </span>
                     <span className="block text-[12.5px] text-muted">{num.hint}</span>
                   </span>
                   <input
                     value={num.raw}
-                    onChange={(e) => num.setRaw(e.target.value.replace(/[^0-9]/g, "").slice(0, 3))}
+                    onChange={(e) => num.setRaw(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))}
                     inputMode="numeric"
-                    placeholder="007"
+                    placeholder={pad(wave.from + 6)}
                     aria-label="Vault number"
                     aria-invalid={num.invalid}
                     className="tnum inset w-[72px] shrink-0 bg-transparent px-3 py-2 text-center text-[16px] font-semibold text-primary outline-none"
@@ -232,13 +272,13 @@ export default function VaultPage() {
                     ? "Claiming…"
                     : city
                       ? `Claim ${held > 0 ? "another vault" : "your vault"} in ${city}`
-                      : "Choose a city on the map"}
+                      : `Choose a wave ${waveNo} city on the map`}
                 </span>
               </button>
               <p className="text-center text-[12.5px] text-muted-2">
                 {city
                   ? `${formatAmount(s.remaining[city] ?? 0, 0)} of ${formatAmount(s.perCity, 0)} left in ${city}` +
-                    (s.canChooseNumbers ? "" : " · your number is assigned at random")
+                    (wave.choose ? "" : " · your number is assigned at random")
                   : `${s.allowed - held} more to choose — any cities, or several in one`}
               </p>
             </div>
@@ -276,8 +316,8 @@ export default function VaultPage() {
       )}
 
       <p className="px-1 text-[12.5px] leading-relaxed text-muted-2">
-        {formatAmount(s?.total ?? 500, 0)} vaults, {formatAmount(s?.perCity ?? 50, 0)} in each of the ten branches,
-        numbered 001 to 500 and unique across the network.{" "}
+        {formatAmount(s?.total ?? 1000, 0)} vaults, {formatAmount(s?.perCity ?? 50, 0)} in each of twenty branches:
+        wave 1 numbered 001 to 500, wave 2 numbered 501 to 1000, every number unique across the network.{" "}
         <span className="font-semibold text-muted">
           Every figure here is simulated — no metal is allocated and no unit is reserved.
         </span>
@@ -311,11 +351,16 @@ function EditVault({
   onSave: (body: { number?: number; city?: string }) => void;
 }) {
   const current = s.vaults.find((v) => v.number === vault);
-  const num = useNumberField(s.takenNumbers, s.total, vault);
   const [city, setCity] = useState(current?.city ?? "");
+  const waveNo = s.branches.find((b) => b.city === city)?.wave ?? 1;
+  const w = s.waves.find((x) => x.wave === waveNo) ?? s.waves[0];
+  const num = useNumberField(s.takenNumbers, w.from, w.to, vault);
   if (!current) return null;
 
   const cityOk = city === current.city || (s.remaining[city] ?? 0) > 0;
+  // Moving to the other wave needs a number from that wave's range.
+  const keepsNumber = vault >= w.from && vault <= w.to;
+  const numberOk = num.value !== null || (num.raw === "" && keepsNumber);
   const changed = (num.value !== null && num.value !== vault) || city !== current.city;
 
   return (
@@ -327,9 +372,9 @@ function EditVault({
         </span>
         <input
           value={num.raw}
-          onChange={(e) => num.setRaw(e.target.value.replace(/[^0-9]/g, "").slice(0, 3))}
+          onChange={(e) => num.setRaw(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))}
           inputMode="numeric"
-          placeholder={String(vault).padStart(3, "0")}
+          placeholder={keepsNumber ? pad(vault) : pad(w.from)}
           aria-label="New vault number"
           aria-invalid={num.invalid}
           className="tnum inset w-[72px] shrink-0 bg-transparent px-3 py-2 text-center text-[16px] font-semibold text-primary outline-none"
@@ -360,7 +405,7 @@ function EditVault({
       </div>
 
       <button
-        disabled={busy || !changed || num.invalid || !cityOk}
+        disabled={busy || !changed || !numberOk || !cityOk}
         onClick={() =>
           onSave({
             ...(num.value !== null && num.value !== vault ? { number: num.value } : {}),

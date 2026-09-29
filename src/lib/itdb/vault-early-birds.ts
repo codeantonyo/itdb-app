@@ -3,7 +3,7 @@
  *
  * Wallets that bought ITDBVAULT from the distributor before the early-bird
  * window closed at 2026-09-21T09:00:00Z, read from the chain on
- * 2026-09-22. 138 wallets.
+ * 2026-09-29. 138 wallets.
  */
 
 export const VAULT_EARLY_BIRD_ENDS_AT = Date.parse("2026-09-21T09:00:00Z");
@@ -162,7 +162,7 @@ export const VAULT_EARLY_BUYERS: VaultEarlyBuyer[] = [
  * the distributor's balance; this is the floor under it, so a Horizon
  * failure can never un-sell tokens and re-lock a milestone.
  */
-export const VAULT_SOLD_AT_BUILD = 338190.681533;
+export const VAULT_SOLD_AT_BUILD = 508616.621903;
 
 /** When cumulative sales first crossed each milestone, or null. */
-export const VAULT_STAGE_REACHED_AT: Record<number, string | null> = {"25":"2026-09-19T21:47:08Z","50":null,"75":null,"100":null};
+export const VAULT_STAGE_REACHED_AT: Record<number, string | null> = {"25":"2026-09-19T21:47:08Z","50":"2026-09-29T03:13:26Z","75":null,"100":null};

@@ -26,6 +26,14 @@ const ROUTES: [string, string][] = [
   ["London", "Frankfurt"],
   ["Frankfurt", "Dubai"],
   ["Dubai", "Sydney"],
+  ["Chicago", "Minneapolis"],
+  ["Minneapolis", "Nashville"],
+  ["Nashville", "Florida"],
+  ["Perth", "Adelaide"],
+  ["Adelaide", "Melbourne"],
+  ["Melbourne", "Sydney"],
+  ["Sydney", "Brisbane"],
+  ["Brisbane", "Auckland"],
 ];
 
 /**
@@ -46,6 +54,19 @@ const LABELS: Record<string, { x: number; y: number; side: "left" | "right" }> =
   Frankfurt: { x: 470, y: 60, side: "right" },
   Dubai: { x: 568, y: 156, side: "right" },
   Sydney: { x: 672, y: 316, side: "left" },
+  // Wave 2. Only one wave's labels show at a time, so these may sit where
+  // wave-1 labels do. Minneapolis and St. Paul share a pin; Brisbane and
+  // Gold Coast nearly do — their names fan out to either side.
+  Minneapolis: { x: 160, y: 58, side: "left" },
+  "St. Paul": { x: 262, y: 62, side: "right" },
+  Nashville: { x: 160, y: 118, side: "left" },
+  Florida: { x: 268, y: 150, side: "right" },
+  Perth: { x: 632, y: 342, side: "left" },
+  Adelaide: { x: 632, y: 300, side: "left" },
+  Melbourne: { x: 632, y: 255, side: "left" },
+  Brisbane: { x: 795, y: 200, side: "left" },
+  "Gold Coast": { x: 795, y: 245, side: "left" },
+  Auckland: { x: 795, y: 345, side: "left" },
 };
 
 const at = (city: string) => VAULT_PINS.find((p) => p.city === city)!;
@@ -71,9 +92,11 @@ interface VaultMapProps {
   remaining?: Record<string, number>;
   selected?: string | null;
   onSelect?: (city: string) => void;
+  /** Which wave's cities are named; the other wave's pins dim */
+  wave?: 1 | 2;
 }
 
-export function VaultMap({ className, remaining, selected, onSelect }: VaultMapProps) {
+export function VaultMap({ className, remaining, selected, onSelect, wave = 1 }: VaultMapProps) {
   const left = (city: string) => remaining?.[city];
   const full = (city: string) => left(city) === 0;
   const pick = (city: string) => {
@@ -86,7 +109,7 @@ export function VaultMap({ className, remaining, selected, onSelect }: VaultMapP
         viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`}
         className="vault-map block w-full"
         role="img"
-        aria-label={`World map showing ITDB vaults in ${VAULT_PINS.map((p) => p.city).join(", ")}`}
+        aria-label={`World map showing ITDB vaults in ${VAULT_PINS.filter((p) => p.wave === wave).map((p) => p.city).join(", ")}`}
       >
         <defs>
           <radialGradient id="vault-glow" cx="50%" cy="50%" r="50%">
@@ -127,7 +150,7 @@ export function VaultMap({ className, remaining, selected, onSelect }: VaultMapP
         </g>
 
         <g className="vault-leaders">
-          {VAULT_PINS.map((p) => {
+          {VAULT_PINS.filter((p) => p.wave === wave).map((p) => {
             const l = LABELS[p.city];
             return <line key={p.city} x1={p.x} y1={p.y} x2={l.x} y2={l.y} />;
           })}
@@ -139,6 +162,7 @@ export function VaultMap({ className, remaining, selected, onSelect }: VaultMapP
               key={p.city}
               data-selected={selected === p.city || undefined}
               data-full={full(p.city) || undefined}
+              data-dim={p.wave !== wave || undefined}
               style={{ ["--d" as string]: `${i * 0.38}s` }}
             >
               <circle cx={p.x} cy={p.y} r="17" fill="url(#vault-glow)" className="vault-halo" />
@@ -146,7 +170,7 @@ export function VaultMap({ className, remaining, selected, onSelect }: VaultMapP
               <circle cx={p.x} cy={p.y} r="2.6" className="vault-core" />
               {/* Tapping the pin itself works as well as tapping its name.
                   The name carries the accessible label, so this is hidden. */}
-              {onSelect && (
+              {onSelect && p.wave === wave && (
                 <circle
                   cx={p.x}
                   cy={p.y}
@@ -164,7 +188,7 @@ export function VaultMap({ className, remaining, selected, onSelect }: VaultMapP
       {/* Labels ride above the map so their text size never scales down.
           Each is the city's button — the name is its accessible label. */}
       <div className="vault-labels">
-        {VAULT_PINS.map((p) => {
+        {VAULT_PINS.filter((p) => p.wave === wave).map((p) => {
           const l = LABELS[p.city];
           const n = left(p.city);
           const isFull = n === 0;

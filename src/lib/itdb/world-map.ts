@@ -197,6 +197,8 @@ export interface VaultPin {
   /** Position inside the 800x361 viewBox */
   x: number;
   y: number;
+  /** 1: vaults #001-500, 2: vaults #501-1000 */
+  wave: 1 | 2;
 }
 
 export const VAULT_PINS: VaultPin[] = [
@@ -204,60 +206,140 @@ export const VAULT_PINS: VaultPin[] = [
     "city": "New York",
     "country": "USA",
     "x": 246.9,
-    "y": 103.8
+    "y": 103.8,
+    "wave": 1
   },
   {
     "city": "Los Angeles",
     "country": "USA",
     "x": 148.8,
-    "y": 121.1
+    "y": 121.1,
+    "wave": 1
   },
   {
     "city": "Chicago",
     "country": "USA",
     "x": 219.7,
-    "y": 100.7
+    "y": 100.7,
+    "wave": 1
   },
   {
     "city": "Miami",
     "country": "USA",
     "x": 225.3,
-    "y": 142.9
+    "y": 142.9,
+    "wave": 1
   },
   {
     "city": "San Francisco",
     "country": "USA",
     "x": 143.6,
-    "y": 111.4
+    "y": 111.4,
+    "wave": 1
   },
   {
     "city": "Toronto",
     "country": "Canada",
     "x": 238.1,
-    "y": 96.2
+    "y": 96.2,
+    "wave": 1
   },
   {
     "city": "London",
     "country": "UK",
     "x": 399.8,
-    "y": 76.2
+    "y": 76.2,
+    "wave": 1
   },
   {
     "city": "Dubai",
     "country": "UAE",
     "x": 520.6,
-    "y": 144.3
+    "y": 144.3,
+    "wave": 1
   },
   {
     "city": "Frankfurt",
     "country": "Germany",
     "x": 417.1,
-    "y": 79.7
+    "y": 79.7,
+    "wave": 1
   },
   {
     "city": "Sydney",
     "country": "Australia",
     "x": 721.4,
-    "y": 298.5
+    "y": 298.5,
+    "wave": 1
+  },
+  {
+    "city": "Perth",
+    "country": "Australia",
+    "x": 647.9,
+    "y": 293.5,
+    "wave": 2
+  },
+  {
+    "city": "Brisbane",
+    "country": "Australia",
+    "x": 731.9,
+    "y": 281.8,
+    "wave": 2
+  },
+  {
+    "city": "Auckland",
+    "country": "New Zealand",
+    "x": 767.4,
+    "y": 306.3,
+    "wave": 2
+  },
+  {
+    "city": "Melbourne",
+    "country": "Australia",
+    "x": 703.6,
+    "y": 308.8,
+    "wave": 2
+  },
+  {
+    "city": "Gold Coast",
+    "country": "Australia",
+    "x": 732.2,
+    "y": 283.2,
+    "wave": 2
+  },
+  {
+    "city": "Minneapolis",
+    "country": "USA",
+    "x": 211,
+    "y": 92.7,
+    "wave": 2
+  },
+  {
+    "city": "St. Paul",
+    "country": "USA",
+    "x": 211.3,
+    "y": 92.8,
+    "wave": 2
+  },
+  {
+    "city": "Nashville",
+    "country": "USA",
+    "x": 217.1,
+    "y": 115.6,
+    "wave": 2
+  },
+  {
+    "city": "Florida",
+    "country": "USA",
+    "x": 224,
+    "y": 135.6,
+    "wave": 2
+  },
+  {
+    "city": "Adelaide",
+    "country": "Australia",
+    "x": 693.5,
+    "y": 301.3,
+    "wave": 2
   }
 ];

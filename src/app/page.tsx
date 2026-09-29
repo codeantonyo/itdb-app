@@ -167,7 +167,7 @@ export default function HomePage() {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-[15.5px] font-semibold text-primary">ITDB Vault</span>
-          <span className="block text-[13px] text-muted">500 vaults across ten cities</span>
+          <span className="block text-[13px] text-muted">1,000 vaults across twenty cities</span>
         </span>
         <ChevronRight className="size-4 shrink-0 text-muted-2" />
       </Link>

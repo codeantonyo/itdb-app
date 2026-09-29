@@ -34,7 +34,22 @@ const CITIES = [
   { city: "Dubai", country: "UAE", lon: 55.2708, lat: 25.2048 },
   { city: "Frankfurt", country: "Germany", lon: 8.6821, lat: 50.1109 },
   { city: "Sydney", country: "Australia", lon: 151.2093, lat: -33.8688 },
-];
+].map((c) => ({ ...c, wave: 1 }));
+
+/** Wave 2, vaults #501-1000. "Florida" is placed at Orlando, mid-state. */
+const WAVE_2 = [
+  { city: "Perth", country: "Australia", lon: 115.8605, lat: -31.9505 },
+  { city: "Brisbane", country: "Australia", lon: 153.0251, lat: -27.4698 },
+  { city: "Auckland", country: "New Zealand", lon: 174.7633, lat: -36.8485 },
+  { city: "Melbourne", country: "Australia", lon: 144.9631, lat: -37.8136 },
+  { city: "Gold Coast", country: "Australia", lon: 153.4, lat: -28.0167 },
+  { city: "Minneapolis", country: "USA", lon: -93.265, lat: 44.9778 },
+  { city: "St. Paul", country: "USA", lon: -93.09, lat: 44.9537 },
+  { city: "Nashville", country: "USA", lon: -86.7816, lat: 36.1627 },
+  { city: "Florida", country: "USA", lon: -81.3792, lat: 28.5383 },
+  { city: "Adelaide", country: "Australia", lon: 138.6007, lat: -34.9285 },
+].map((c) => ({ ...c, wave: 2 }));
+CITIES.push(...WAVE_2);
 
 const res = await fetch(SRC);
 if (!res.ok) throw new Error(`Could not fetch the map: ${res.status}`);
@@ -96,10 +111,12 @@ export interface VaultPin {
   /** Position inside the ${WIDTH}x${HEIGHT} viewBox */
   x: number;
   y: number;
+  /** 1: vaults #001-500, 2: vaults #501-1000 */
+  wave: 1 | 2;
 }
 
 export const VAULT_PINS: VaultPin[] = ${JSON.stringify(
-  pins.map(({ city, country, x, y }) => ({ city, country, x, y })),
+  pins.map(({ city, country, x, y, wave }) => ({ city, country, x, y, wave })),
   null,
   2,
 )};

@@ -18,8 +18,10 @@ import {
   VAULT_CITY_NAMES,
   VAULT_DISTRIBUTOR,
   VAULT_METALS,
+  VAULT_WAVES,
   XLM_PER_VAULT,
   activeMetalBoost,
+  choosesNumber,
   currentStage,
   randomFreeNumber,
   remainingByCity,
@@ -27,6 +29,8 @@ import {
   vaultMilestones,
   vaultSold,
   vaultsAllowed,
+  waveOf,
+  type VaultWave,
 } from "@/lib/itdb/vault";
 import {
   VAULT_TIERS,
@@ -75,6 +79,8 @@ export interface VaultSummary {
   remaining: Record<string, number>;
   /** Vault numbers already owned, network-wide */
   takenNumbers: number[];
+  /** Number ranges, whether I choose in each, and what is left */
+  waves: (VaultWave & { choose: boolean; available: number })[];
 
   sale: {
     xlm: number;
@@ -200,6 +206,11 @@ function summarise(db: DbShape, account: DbAccount, chain: ChainState, now = Dat
     perCity: VAULTS_PER_CITY,
     remaining: remainingByCity(takenByCity(db)),
     takenNumbers: [...takenNumbers(db)].sort((a, b) => a - b),
+    waves: VAULT_WAVES.map((w) => ({
+      ...w,
+      choose: choosesNumber(w, e.eb !== null),
+      available: w.to - w.from + 1 - allVaults(db).filter((v) => v.number >= w.from && v.number <= w.to).length,
+    })),
 
     sale: {
       xlm: SALE_XLM_TOTAL,
@@ -268,6 +279,12 @@ async function load(req: Request) {
 const validNumber = (n: unknown): n is number =>
   typeof n === "number" && Number.isInteger(n) && n >= 1 && n <= TOTAL_VAULTS;
 
+const pad = (n: number) => String(n).padStart(3, "0");
+const outOfWave = (n: number, city: string) => {
+  const w = waveOf(city);
+  return n < w.from || n > w.to ? `${city} holds vaults ${pad(w.from)} to ${pad(w.to)}.` : null;
+};
+
 /** GET /api/vault — the network, and this member's tier and vaults. */
 export async function GET(req: Request) {
   const l = await load(req);
@@ -281,8 +298,9 @@ export async function GET(req: Request) {
 /**
  * POST /api/vault — take one more vault, up to what the tier allows.
  *
- * Body: { city, number? }. Early birds may name a free number; everyone
- * else is given a random one. The tier is re-read from the chain here,
+ * Body: { city, number? }. The number must sit in the city's wave. In
+ * wave 2 everyone names a free number; in wave 1 early birds may, and
+ * everyone else is given a random one. The tier is re-read from the chain here,
  * never taken from the client, and the count, city capacity and number
  * are all re-checked inside the mutation.
  */
@@ -298,12 +316,15 @@ export async function POST(req: Request) {
   }
   const city = typeof body.city === "string" ? body.city : null;
   if (!city || !VAULT_CITY_NAMES.includes(city))
-    return NextResponse.json({ error: "Choose one of our ten cities." }, { status: 400 });
+    return NextResponse.json({ error: "Choose one of our cities." }, { status: 400 });
   if (body.number !== undefined && !validNumber(body.number))
     return NextResponse.json(
       { error: `Vault numbers run from 001 to ${TOTAL_VAULTS}.` },
       { status: 400 },
     );
+  const wave = waveOf(city);
+  const wrongWave = validNumber(body.number) ? outOfWave(body.number, city) : null;
+  if (wrongWave) return NextResponse.json({ error: wrongWave }, { status: 400 });
 
   const chain = await readChain(l.account);
   if (chain.holding === null)
@@ -329,12 +350,12 @@ export async function POST(req: Request) {
 
     const taken = takenNumbers(db);
     let number: number;
-    if (e.eb && validNumber(body.number)) {
-      if (taken.has(body.number)) return fail(`Vault #${String(body.number).padStart(3, "0")} is already owned.`, 409);
+    if (choosesNumber(wave, e.eb !== null) && validNumber(body.number)) {
+      if (taken.has(body.number)) return fail(`Vault #${pad(body.number)} is already owned.`, 409);
       number = body.number;
     } else {
-      const free = randomFreeNumber(taken);
-      if (free === null) return fail("Every vault number is taken.", 409);
+      const free = randomFreeNumber(taken, wave);
+      if (free === null) return fail("Every vault number in this wave is taken.", 409);
       number = free;
     }
 
@@ -374,7 +395,7 @@ export async function PATCH(req: Request) {
   if (body.number !== undefined && !validNumber(body.number))
     return NextResponse.json({ error: `Vault numbers run from 001 to ${TOTAL_VAULTS}.` }, { status: 400 });
   if (body.city !== undefined && (typeof body.city !== "string" || !VAULT_CITY_NAMES.includes(body.city)))
-    return NextResponse.json({ error: "Choose one of our ten cities." }, { status: 400 });
+    return NextResponse.json({ error: "Choose one of our cities." }, { status: 400 });
 
   const from = body.vault;
   const toNumber = (body.number as number | undefined) ?? from;
@@ -384,9 +405,11 @@ export async function PATCH(req: Request) {
     const mine = db.vaultClaims[l.account.id] ?? [];
     const v = mine.find((x) => x.number === from);
     if (!v) return fail("That vault is not yours.", 404);
+    const wrongWave = outOfWave(toNumber, toCity ?? v.city);
+    if (wrongWave) return fail(`${wrongWave} Pick a number in that range.`, 400);
 
     if (toNumber !== v.number && takenNumbers(db).has(toNumber))
-      return fail(`Vault #${String(toNumber).padStart(3, "0")} is already owned.`, 409);
+      return fail(`Vault #${pad(toNumber)} is already owned.`, 409);
     if (toCity && toCity !== v.city && (remainingByCity(takenByCity(db))[toCity] ?? 0) <= 0)
       return fail(`${toCity} is full.`, 409);
 

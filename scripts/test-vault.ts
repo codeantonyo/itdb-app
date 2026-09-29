@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import {
   TOKEN_SUPPLY, TOTAL_VAULTS, VAULTS_PER_CITY, VAULT_CITY_NAMES,
-  activeMetalBoost, currentStage, randomFreeNumber, remainingByCity,
+  VAULT_WAVES, activeMetalBoost, choosesNumber, currentStage, randomFreeNumber, remainingByCity, waveOf,
   stageTarget, vaultEarlyBird, vaultSold, vaultsAllowed,
 } from "@/lib/itdb/vault";
 import { VAULT_EARLY_BIRD_ENDS_AT, VAULT_EARLY_BUYERS, VAULT_SOLD_AT_BUILD } from "@/lib/itdb/vault-early-birds";
@@ -12,9 +12,11 @@ import { vaultTierBalance, vaultTierNeeded } from "@/lib/server/vault-perks";
 import { MAP_HEIGHT, MAP_WIDTH, VAULT_PINS } from "@/lib/itdb/world-map";
 
 // --- map and branches -------------------------------------------------
-assert.equal(VAULT_PINS.length, 10);
+assert.equal(VAULT_PINS.length, 20);
+assert.equal(VAULT_PINS.filter((p) => p.wave === 2).length, 10, "ten wave-2 cities");
 assert.ok(VAULT_PINS.every((p) => p.x > 0 && p.x < MAP_WIDTH && p.y > 0 && p.y < MAP_HEIGHT), "pins on the map");
 assert.equal(VAULTS_PER_CITY * VAULT_CITY_NAMES.length, TOTAL_VAULTS);
+assert.equal(new Set(VAULT_CITY_NAMES).size, 20, "no city twice");
 assert.equal(remainingByCity({ Dubai: 999 })["Dubai"], 0, "a city clamps at zero");
 assert.equal(remainingByCity({ Dubai: 50 })["London"], 50, "cities are independent");
 
@@ -22,7 +24,7 @@ assert.equal(remainingByCity({ Dubai: 50 })["London"], 50, "cities are independe
 assert.deepEqual(VAULT_TIERS.map((t) => t.min),
   [2_000, 4_000, 8_000, 16_000, 32_000, 64_000, 128_000, 256_000, 512_000, 1_000_000]);
 assert.ok(VAULT_TIERS.every((t) => t.vaults === t.tier), "Tier N owns N vaults");
-assert.equal(VAULT_TIERS[0].min, TOKEN_SUPPLY / TOTAL_VAULTS, "Tier 1 == one vault of tokens");
+assert.equal(VAULT_TIERS[0].min, TOKEN_SUPPLY / 500, "Tier 1 == one wave-1 vault of tokens");
 assert.equal(vaultTierFor(1_999), null);
 assert.equal(vaultTierFor(2_000)?.tier, 1);
 
@@ -42,11 +44,12 @@ assert.equal(vaultTierNeeded(4_000, 1_000, 2_000), 1_000, "1,000 real tokens to 
 // #4 holds 2,100: counted as 4,200 → Tier 2 → 2 vaults, +1 from the 25% stage.
 const t4 = vaultTierFor(vaultTierBalance(2_100, true))!;
 assert.equal(t4.tier, 2);
-assert.equal(vaultsAllowed(t4.vaults, VAULT_SOLD_AT_BUILD, []), 3, "#4 may hold three vaults");
+assert.equal(vaultsAllowed(t4.vaults, 300_000, []), 3, "#4 at 25% sold may hold three vaults");
+assert.equal(vaultsAllowed(t4.vaults, VAULT_SOLD_AT_BUILD, []), 5, "and at 50% sold, five (2 + 3)");
 
 // --- sales, milestones and entitlement --------------------------------
 assert.equal(vaultSold(null), VAULT_SOLD_AT_BUILD, "Horizon down: never less than was sold");
-assert.equal(vaultSold(200_000_000 - 500_000), 500_000, "live sales read from the distributor");
+assert.equal(vaultSold(200_000_000 - 600_000), 600_000, "live sales read from the distributor");
 assert.equal(vaultSold(200_000_000), VAULT_SOLD_AT_BUILD, "sales never un-happen");
 assert.equal(stageTarget(25), 250_000);
 assert.equal(currentStage(249_999), null);
@@ -57,15 +60,25 @@ assert.equal(vaultsAllowed(3, 250_000, []), 4, "Tier 3 at 25% sold: 3 + 1");
 
 // The 25% stage opened with the first sale; its double metals run 14 days.
 const opened = Date.parse("2026-09-19T21:47:08Z");
-assert.equal(activeMetalBoost(VAULT_SOLD_AT_BUILD, opened + 13 * 86_400_000).multiplier, 2);
-assert.equal(activeMetalBoost(VAULT_SOLD_AT_BUILD, opened + 15 * 86_400_000).multiplier, 1, "boost ends on day 14");
+assert.equal(activeMetalBoost(300_000, opened + 13 * 86_400_000).multiplier, 2);
+assert.equal(activeMetalBoost(300_000, opened + 15 * 86_400_000).multiplier, 1, "boost ends on day 14");
+// The 50% stage was crossed on 09-29: triple metals for 30 days from then, not from every request.
+const fifty = Date.parse("2026-09-29T03:13:26Z");
+assert.equal(activeMetalBoost(VAULT_SOLD_AT_BUILD, fifty + 29 * 86_400_000).multiplier, 3);
+assert.equal(activeMetalBoost(VAULT_SOLD_AT_BUILD, fifty + 31 * 86_400_000).multiplier, 1, "50% boost ends on day 30");
 
 // --- vault numbers ----------------------------------------------------
+const [W1, W2] = VAULT_WAVES;
+assert.deepEqual([waveOf("London"), waveOf("Perth"), waveOf("St. Paul")].map((w) => w.wave), [1, 2, 2]);
+assert.equal(choosesNumber(W2, false), true, "wave 2: everyone chooses");
+assert.equal(choosesNumber(W1, false), false, "wave 1: random unless early bird");
 const taken = new Set(Array.from({ length: 499 }, (_, i) => i + 1)); // only 500 left
-assert.equal(randomFreeNumber(taken), 500, "the only free number");
-assert.equal(randomFreeNumber(new Set(Array.from({ length: 500 }, (_, i) => i + 1))), null);
+assert.equal(randomFreeNumber(taken, W1), 500, "the only free number");
+assert.equal(randomFreeNumber(new Set(Array.from({ length: 500 }, (_, i) => i + 1)), W1), null, "wave 1 full");
+const w2 = randomFreeNumber(taken, W2)!;
+assert.ok(w2 >= 501 && w2 <= 1000, "wave 2 numbers stay in 501-1000");
 const seen = new Set<number>();
-for (let i = 0; i < 400; i += 1) seen.add(randomFreeNumber(new Set([1, 2, 3]))!);
+for (let i = 0; i < 400; i += 1) seen.add(randomFreeNumber(new Set([1, 2, 3]), W1)!);
 assert.ok(![1, 2, 3].some((n) => seen.has(n)), "never hands out an owned number");
 assert.ok(seen.size > 100, "random, not the lowest free");
 

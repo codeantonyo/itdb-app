@@ -10,7 +10,9 @@ import {
 import { VAULT_PINS } from "./world-map";
 
 /**
- * ITDBVAULT — 500 personal vaults across ten branches.
+ * ITDBVAULT — 1,000 personal vaults across twenty branches, in two waves:
+ * wave 1 is #001-500 in the first ten cities, wave 2 is #501-1000 in the
+ * next ten.
  *
  * What a member is entitled to comes from the CHAIN: their tier from the
  * ITDBVAULT they hold, early-bird status from whether they bought during
@@ -22,13 +24,38 @@ import { VAULT_PINS } from "./world-map";
  * here moves a token, allocates metal, or reserves a physical unit.
  */
 
-export const TOTAL_VAULTS = 500;
+export interface VaultWave {
+  wave: 1 | 2;
+  /** First and last vault number in this wave */
+  from: number;
+  to: number;
+}
 
-/** The 500 vaults are split evenly, so each city holds this many. */
-export const VAULTS_PER_CITY = TOTAL_VAULTS / VAULT_PINS.length;
+/**
+ * Each wave's cities hold its numbers. Wave 1: early birds choose their
+ * number and everyone else is given one at random. Wave 2: everyone
+ * chooses. In both, a number is owned once, network-wide.
+ */
+export const VAULT_WAVES: VaultWave[] = [
+  { wave: 1, from: 1, to: 500 },
+  { wave: 2, from: 501, to: 1000 },
+];
+
+export const TOTAL_VAULTS = 1000;
+/** Ten cities per wave, 500 vaults per wave: 50 in each city. */
+export const VAULTS_PER_CITY = 50;
 
 export const VAULT_CITIES = VAULT_PINS;
 export const VAULT_CITY_NAMES = VAULT_PINS.map((p) => p.city);
+
+/** The wave a city belongs to — its vault numbers come from that range. */
+export function waveOf(city: string): VaultWave {
+  const w = VAULT_PINS.find((p) => p.city === city)?.wave ?? 1;
+  return VAULT_WAVES.find((x) => x.wave === w)!;
+}
+
+/** Whether a member picks their own number in this wave. */
+export const choosesNumber = (wave: VaultWave, earlyBird: boolean) => wave.wave === 2 || earlyBird;
 
 const FLAGS: Record<string, string> = {
   USA: "🇺🇸",
@@ -37,18 +64,21 @@ const FLAGS: Record<string, string> = {
   UAE: "🇦🇪",
   Germany: "🇩🇪",
   Australia: "🇦🇺",
+  "New Zealand": "🇳🇿",
 };
 
 export interface Branch {
   city: string;
   country: string;
   flag: string;
+  wave: 1 | 2;
 }
 
 export const BRANCHES: Branch[] = VAULT_PINS.map((p) => ({
   city: p.city,
   country: p.country,
   flag: FLAGS[p.country] ?? "",
+  wave: p.wave,
 }));
 
 /* ------------------------------------------------------------------ */
@@ -58,7 +88,8 @@ export const BRANCHES: Branch[] = VAULT_PINS.map((p) => ({
 /**
  * The sale is 100,000 XLM at 0.1 XLM per ITDBVAULT: 1,000,000 tokens,
  * which the tier table confirms — Tier 1 opens at one vault's 2,000 and
- * Tier 10 at the full 1,000,000.
+ * Tier 10 at the full 1,000,000. Priced on the first wave's 500 vaults;
+ * wave 2 adds places, not a new price.
  *
  * 200,000,000 were issued on chain; the rest sits with the distributor.
  * "Sold" is what has left the distributor, so it is measured against the
@@ -67,8 +98,9 @@ export const BRANCHES: Branch[] = VAULT_PINS.map((p) => ({
 export const SALE_XLM_TOTAL = 100_000;
 export const PRICE_XLM_PER_TOKEN = 0.1;
 export const TOKEN_SUPPLY = SALE_XLM_TOTAL / PRICE_XLM_PER_TOKEN;
-export const XLM_PER_VAULT = SALE_XLM_TOTAL / TOTAL_VAULTS;
-export const TOKENS_PER_VAULT = TOKEN_SUPPLY / TOTAL_VAULTS;
+const SALE_VAULTS = 500;
+export const XLM_PER_VAULT = SALE_XLM_TOTAL / SALE_VAULTS;
+export const TOKENS_PER_VAULT = TOKEN_SUPPLY / SALE_VAULTS;
 
 export const VAULT_ISSUED = 200_000_000;
 export const VAULT_DISTRIBUTOR = "GCAA2CIQUWBZGOD3D2FHMLRA2476KRHORZYCCSO3CTT5JXWUOFCF3QFS";
@@ -319,15 +351,15 @@ export function remainingByCity(taken: Record<string, number>): Record<string, n
 }
 
 /**
- * A random free vault number — what a member without early-bird status
- * is given. Uniform over what is left, so nobody can predict or farm a
- * number by timing their claim.
+ * A random free number in the wave — what a wave-1 member without
+ * early-bird status is given. Uniform over what is left, so nobody can
+ * predict or farm a number by timing their claim.
  */
-export function randomFreeNumber(taken: Set<number>): number | null {
+export function randomFreeNumber(taken: Set<number>, wave: VaultWave): number | null {
   const free: number[] = [];
-  for (let n = 1; n <= TOTAL_VAULTS; n += 1) if (!taken.has(n)) free.push(n);
+  for (let n = wave.from; n <= wave.to; n += 1) if (!taken.has(n)) free.push(n);
   return free.length === 0 ? null : free[randomInt(free.length)];
 }
 
-/** Vault numbers read as 001-500. */
+/** Vault numbers read as 001-1000. */
 export const vaultLabel = (n: number) => `#${String(n).padStart(3, "0")}`;

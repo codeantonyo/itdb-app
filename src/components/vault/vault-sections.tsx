@@ -255,7 +255,7 @@ export function EarlyBird({ s }: { s: VaultSummary }) {
           />
           <Perk
             title="Preferred vault numbers"
-            detail="Pick any free number from 001 to 500 — and change the numbers of vaults you already hold."
+            detail="Pick any free wave-1 number from 001 to 500 — and change the numbers of vaults you already hold."
           />
           <Perk
             title="50% off the vault tiers"
@@ -394,7 +394,9 @@ export function Branches({ s }: { s: VaultSummary }) {
               <span className="text-[18px] leading-none">{b.flag}</span>
               <span className="min-w-0 flex-1">
                 <span className="block text-[15px] font-semibold text-primary">{b.city}</span>
-                <span className="block text-[12.5px] text-muted-2">{b.country}</span>
+                <span className="block text-[12.5px] text-muted-2">
+                  {b.country} · Wave {b.wave}
+                </span>
               </span>
               <span
                 className={cn("tnum shrink-0 text-[13px] font-semibold", left === 0 ? "text-muted-2" : "text-gold")}
