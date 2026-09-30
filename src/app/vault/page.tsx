@@ -317,10 +317,7 @@ export default function VaultPage() {
 
       <p className="px-1 text-[12.5px] leading-relaxed text-muted-2">
         {formatAmount(s?.total ?? 1000, 0)} vaults, {formatAmount(s?.perCity ?? 50, 0)} in each of twenty branches:
-        wave 1 numbered 001 to 500, wave 2 numbered 501 to 1000, every number unique across the network.{" "}
-        <span className="font-semibold text-muted">
-          Every figure here is simulated — no metal is allocated and no unit is reserved.
-        </span>
+        wave 1 numbered 001 to 500, wave 2 numbered 501 to 1000, every number unique across the network.
       </p>
 
       {s && editing !== null && (
