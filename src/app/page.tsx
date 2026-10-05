@@ -34,6 +34,7 @@ const HREF_OF: Record<string, string> = {
   ITDBONE: "/itdbone",
   QRS: "/qrs",
   ITDBVAULT: "/vault",
+  ITDBATMS: "/atms",
 };
 
 function greeting(): string {

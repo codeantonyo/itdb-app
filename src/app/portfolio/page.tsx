@@ -26,6 +26,7 @@ const HREF_OF: Record<string, string> = {
   ITDBONE: "/itdbone",
   QRS: "/qrs",
   ITDBVAULT: "/vault",
+  ITDBATMS: "/atms",
 };
 
 export default function PortfolioPage() {

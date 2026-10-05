@@ -36,11 +36,18 @@ export const ITDBVAULT_TOKEN: RegistryToken = {
   expectedDomain: "itdb-qfs.org",
 };
 
+export const ITDBATMS_TOKEN: RegistryToken = {
+  code: "ITDBATMS",
+  issuer: "GDEIVYTG65ECPXM2SMFPAL5GRFASAYDPDMJ6NY3WKMCWCRLOC2OAOATM",
+  expectedDomain: "itdb-atms.com",
+};
+
 export const TOKEN_REGISTRY: RegistryToken[] = [
   ITDB_TOKEN,
   ITDBONE_TOKEN,
   QRS_TOKEN,
   ITDBVAULT_TOKEN,
+  ITDBATMS_TOKEN,
 ];
 
 export const marketUrl = (t: { code: string; issuer: string }) =>
