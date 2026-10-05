@@ -10,6 +10,8 @@ export interface RegistryToken {
   issuer: string;
   /** Expected home domain — display hint only; the chain is the source */
   expectedDomain: string;
+  /** Our own logo, used in place of the issuer's stellar.toml image */
+  image?: string;
 }
 
 export const ITDB_TOKEN: RegistryToken = {
@@ -40,6 +42,7 @@ export const ITDBATMS_TOKEN: RegistryToken = {
   code: "ITDBATMS",
   issuer: "GDEIVYTG65ECPXM2SMFPAL5GRFASAYDPDMJ6NY3WKMCWCRLOC2OAOATM",
   expectedDomain: "itdb-atms.com",
+  image: "/tokens/itdbatms.webp",
 };
 
 export const TOKEN_REGISTRY: RegistryToken[] = [

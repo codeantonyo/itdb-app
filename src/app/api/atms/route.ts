@@ -32,7 +32,7 @@ export interface AtmSummary {
   /** Null when the sales could not be read */
   sold: number | null;
   soldPct: number;
-  presale: { startsAt: number; endsAt: number; open: boolean; ended: boolean } | null;
+  presale: { startsAt: number; endsAt: number; open: boolean; ended: boolean };
 
   /** ITDBATMS held on chain; null when Horizon could not be read */
   holding: number | null;
@@ -86,11 +86,11 @@ function entitlementOf(account: DbAccount, holding: number, sales: AtmSale[] | n
   const list = sales ?? [];
   const window = presaleWindow(list);
   const wallets = new Set(account.wallets);
-  const presaleBought = window
-    ? list.filter((s) => wallets.has(s.wallet) && s.at >= window.startsAt && s.at < window.endsAt).reduce((t, s) => t + s.amount, 0)
-    : 0;
+  const presaleBought = list
+    .filter((s) => wallets.has(s.wallet) && s.at <= window.cutoff)
+    .reduce((t, s) => t + s.amount, 0);
   const sold = list.reduce((t, s) => t + s.amount, 0);
-  const e = atmEntitlement({ holding, presaleBought, presaleEnded: !!window && now >= window.endsAt, sold });
+  const e = atmEntitlement({ holding, presaleBought, presaleEnded: now >= window.endsAt, sold });
   return { ...e, window, presaleBought, sold };
 }
 
@@ -112,7 +112,12 @@ function summarise(db: DbShape, account: DbAccount, holding: number | null, sale
 
     sold: sales ? e.sold : null,
     soldPct: Math.min((e.sold / ATMS_SUPPLY) * 100, 100),
-    presale: e.window ? { ...e.window, open: now >= e.window.startsAt && now < e.window.endsAt, ended: now >= e.window.endsAt } : null,
+    presale: {
+      startsAt: e.window.startsAt,
+      endsAt: e.window.endsAt,
+      open: now >= e.window.startsAt && now < e.window.endsAt,
+      ended: now >= e.window.endsAt,
+    },
 
     holding,
     presaleBought: e.presaleBought,

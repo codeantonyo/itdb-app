@@ -284,7 +284,7 @@ export async function resolveToken(
     code: token.code,
     issuer: token.issuer,
     name: toml?.name?.trim() || expert?.name?.trim() || token.code,
-    image: toml?.image ?? expert?.image ?? expert?.orgLogo ?? null,
+    image: token.image ?? toml?.image ?? expert?.image ?? expert?.orgLogo ?? null,
     desc: toml?.desc ?? expert?.desc ?? null,
     domain,
     priceXlm,

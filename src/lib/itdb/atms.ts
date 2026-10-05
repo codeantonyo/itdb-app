@@ -39,11 +39,11 @@ export const ATMS_PRICE_XLM = 0.1;
 export const ATMS_SUPPLY = 1_000_000;
 
 /**
- * The pre-sale runs 48 hours from its start. Left null, the start is the
- * distributor's first sale on chain. Set an ISO time here to pin it to
- * an announced start instead.
+ * The 48-hour pre-sale ended 2026-10-05 16:00 UTC (19:00 in Romania).
+ * Members placed buy orders during it; the distributor opened its sell
+ * offer at 16:56:52 UTC and every waiting order filled in that ledger.
  */
-export const ATMS_PRESALE_STARTS_AT: string | null = null;
+export const ATMS_PRESALE_ENDS_AT = "2026-10-05T16:00:00Z";
 export const PRESALE_HOURS = 48;
 
 /* ------------------------------------------------------------------ */
@@ -229,9 +229,16 @@ export interface AtmSale {
   at: number;
 }
 
-export function presaleWindow(sales: AtmSale[]): { startsAt: number; endsAt: number } | null {
-  const start = ATMS_PRESALE_STARTS_AT ? Date.parse(ATMS_PRESALE_STARTS_AT) : sales[0]?.at;
-  return start === undefined ? null : { startsAt: start, endsAt: start + PRESALE_HOURS * 3_600_000 };
+/**
+ * The pre-sale, and which sales belong to it. Orders were placed in the
+ * window but filled only when the sale opened, after it — so a sale is a
+ * pre-sale purchase if it filled by the end OR in the opening fill, which
+ * is the orders that were already waiting.
+ */
+export function presaleWindow(sales: AtmSale[]): { startsAt: number; endsAt: number; cutoff: number } {
+  const endsAt = Date.parse(ATMS_PRESALE_ENDS_AT);
+  const opening = sales[0]?.at ?? endsAt;
+  return { startsAt: endsAt - PRESALE_HOURS * 3_600_000, endsAt, cutoff: Math.max(endsAt, opening) };
 }
 
 /**

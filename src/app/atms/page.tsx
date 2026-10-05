@@ -318,9 +318,7 @@ function YourRewards({ s }: { s: AtmSummary }) {
 function PresaleBonuses({ s }: { s: AtmSummary }) {
   const p = s.presale;
   const holder = s.presaleBought >= ATM_TIERS[0].min;
-  const status = !p
-    ? `Opens with the first sale and runs ${PRESALE_HOURS} hours.`
-    : p.open
+  const status = p.open
       ? `Open now — ends ${when(p.endsAt)}.`
       : p.ended
         ? `Ended ${when(p.endsAt)}.`

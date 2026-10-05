@@ -56,8 +56,12 @@ const sales = [
   { wallet: "B", amount: 12_000, at: T + 1 },
   { wallet: "A", amount: 6_000, at: T + 2 },
 ];
-assert.deepEqual(presaleWindow(sales), { startsAt: T, endsAt: T + 48 * 3_600_000 });
-assert.equal(presaleWindow([]), null, "no sale yet, no window");
+const END = Date.parse("2026-10-05T16:00:00Z");
+const OPEN = Date.parse("2026-10-05T16:56:52Z");
+const w = presaleWindow([{ wallet: "A", amount: 1_000, at: OPEN }, { wallet: "B", amount: 1_000, at: OPEN + 60_000 }]);
+assert.equal(w.startsAt, END - 48 * 3_600_000, "48 hours, ending at 16:00 UTC");
+assert.equal(w.cutoff, OPEN, "orders waiting at the opening fill are pre-sale purchases; later ones are not");
+assert.equal(presaleWindow([]).cutoff, END);
 assert.deepEqual([...firstToReach(sales, 10_000, 100)], ["B", "A"], "in the order they reached Tier 3");
 assert.deepEqual([...firstToReach(sales, 10_000, 1)], ["B"], "seats run out");
 
