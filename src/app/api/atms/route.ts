@@ -15,9 +15,10 @@ import {
   placementProblem,
   presaleWindow,
   type AtmSale,
+  type AtmStage,
 } from "@/lib/itdb/atms";
-import { atmSales } from "@/lib/server/atm-sales";
-import { getDb, mutateDb, type DbAccount, type DbShape } from "@/lib/server/db";
+import { atmChain, type AtmBonusPayment } from "@/lib/server/atm-sales";
+import { getDb, mutateDb, type AtmWaveRecord, type DbAccount, type DbShape } from "@/lib/server/db";
 import { memberHoldings, tokenBalance } from "@/lib/server/holdings";
 import { sessionAccountId } from "@/lib/server/session";
 import { ITDBATMS_TOKEN } from "@/lib/stellar/registry";
@@ -53,10 +54,15 @@ export interface AtmSummary {
   /** The current wave's rewards on this member's holding */
   wave: {
     pct: number;
+    /** Bonus ITDBATMS due, and how much of it has reached their wallets */
     bonusTokens: number;
+    tokensSent: number;
+    txHash: string | null;
     crypto: { code: string; amount: number }[];
     goldKg: number;
     extraReturnPct: number;
+    /** When the crypto and gold were credited to the account, or null */
+    creditedAt: number | null;
   } | null;
   council: boolean;
   centralBank: boolean;
@@ -72,14 +78,32 @@ const byCity = (db: DbShape, exceptId?: string) => {
 };
 
 async function readChain(account: DbAccount) {
-  const [mine, sales] = await Promise.all([
+  const [mine, chain] = await Promise.all([
     memberHoldings(account.wallets).then(
       (h) => tokenBalance(h, ITDBATMS_TOKEN),
       () => null,
     ),
-    atmSales(),
+    atmChain(),
   ]);
-  return { holding: mine, sales };
+  const wallets = new Set(account.wallets);
+  return {
+    holding: mine,
+    sales: chain?.sales ?? null,
+    bonuses: (chain?.bonuses ?? []).filter((b) => wallets.has(b.wallet)),
+  };
+}
+
+/**
+ * What wave rewards are counted on: the holding WITHOUT bonus tokens
+ * already received, so a paid bonus never earns itself another bonus.
+ */
+const basisOf = (holding: number, mine: AtmBonusPayment[]) =>
+  Math.max(holding - mine.reduce((t, b) => t + b.amount, 0), 0);
+
+/** A wave's in-app rewards (crypto + gold) on a basis. */
+function waveRecord(stage: AtmStage, basis: number, at: number): AtmWaveRecord {
+  const k = Math.floor(basis / 1_000);
+  return { at, basis, crypto: stage.cryptoPer1000.map((c) => ({ code: c.code, amount: c.amount * k })), goldKg: stage.goldKg };
 }
 
 function entitlementOf(account: DbAccount, holding: number, sales: AtmSale[] | null, now: number) {
@@ -94,13 +118,19 @@ function entitlementOf(account: DbAccount, holding: number, sales: AtmSale[] | n
   return { ...e, window, presaleBought, sold };
 }
 
-function summarise(db: DbShape, account: DbAccount, holding: number | null, sales: AtmSale[] | null, now = Date.now()): AtmSummary {
+function summarise(
+  db: DbShape,
+  account: DbAccount,
+  holding: number | null,
+  sales: AtmSale[] | null,
+  bonuses: AtmBonusPayment[],
+  now = Date.now(),
+): AtmSummary {
   const e = entitlementOf(account, holding ?? 0, sales, now);
   const taken = byCity(db);
   const placed = Object.values(taken).reduce((s, n) => s + n, 0);
   const mine = db.atmPlacements[account.id] ?? {};
   const nxt = nextAtmTier(e.counted);
-  const k = Math.floor((holding ?? 0) / 1_000);
   const owns = (seats: Set<string>) => account.wallets.some((w) => seats.has(w));
   const list = sales ?? [];
 
@@ -139,17 +169,24 @@ function summarise(db: DbShape, account: DbAccount, holding: number | null, sale
       e.presaleBought >= ATM_TIERS[0].min
         ? PRESALE_CRYPTO_PER_1000.map((c) => ({ code: c.code, amount: c.amount * Math.floor(e.presaleBought / 1_000) }))
         : [],
-    wave: e.stage
-      ? {
-          pct: e.stage.pct,
-          bonusTokens: Math.round(((holding ?? 0) * e.stage.bonusPct) / 100),
-          crypto: e.stage.cryptoPer1000.map((c) => ({ code: c.code, amount: c.amount * k })),
-          goldKg: e.stage.goldKg,
-          extraReturnPct: e.stage.extraReturnPct,
-        }
-      : null,
+    wave: e.stage ? waveView(e.stage, basisOf(holding ?? 0, bonuses), bonuses, db.atmWaves[account.id]?.[e.stage.pct]) : null,
     council: owns(firstToReach(list, ATM_TIERS[COUNCIL.tier - 1].min, COUNCIL.seats)),
     centralBank: owns(firstToReach(list, ATM_TIERS[CENTRAL_BANK.tier - 1].min, CENTRAL_BANK.seats)),
+  };
+}
+
+function waveView(stage: AtmStage, basis: number, mine: AtmBonusPayment[], credited: AtmWaveRecord | undefined): AtmSummary["wave"] {
+  const paid = mine.filter((b) => b.wave === stage.pct);
+  const r = credited ?? waveRecord(stage, basis, 0);
+  return {
+    pct: stage.pct,
+    bonusTokens: paid.length ? paid.reduce((t, b) => t + b.amount, 0) : Math.round((basis * stage.bonusPct) / 100),
+    tokensSent: paid.reduce((t, b) => t + b.amount, 0),
+    txHash: paid[0]?.txHash ?? null,
+    crypto: r.crypto,
+    goldKg: r.goldKg,
+    extraReturnPct: stage.extraReturnPct,
+    creditedAt: credited?.at ?? null,
   };
 }
 
@@ -164,8 +201,22 @@ async function load(req: Request) {
 export async function GET(req: Request) {
   const account = await load(req);
   if (!account) return NextResponse.json({ error: "Sign in again." }, { status: 401 });
-  const { holding, sales } = await readChain(account);
-  return NextResponse.json(summarise(await getDb(), account, holding, sales));
+  const { holding, sales, bonuses } = await readChain(account);
+
+  // Credit the current wave's crypto and gold the first time a holder of
+  // 1,000+ opens this — automatically, once per wave. An unreadable
+  // holding decides nothing.
+  if (holding !== null && sales !== null) {
+    const { stage } = entitlementOf(account, holding, sales, Date.now());
+    const basis = basisOf(holding, bonuses);
+    if (stage && basis >= ATM_TIERS[0].min && !(await getDb()).atmWaves[account.id]?.[stage.pct])
+      await mutateDb((db) => {
+        const mine = (db.atmWaves[account.id] ??= {});
+        mine[stage.pct] ??= waveRecord(stage, basis, Date.now());
+        return null;
+      });
+  }
+  return NextResponse.json(summarise(await getDb(), account, holding, sales, bonuses));
 }
 
 /**
@@ -186,7 +237,7 @@ export async function POST(req: Request) {
   const city = typeof body.city === "string" ? body.city : "";
   const count = typeof body.count === "number" ? body.count : NaN;
 
-  const { holding, sales } = await readChain(account);
+  const { holding, sales, bonuses } = await readChain(account);
   const current = (await getDb()).atmPlacements[account.id]?.[city] ?? 0;
   if (count > current && (holding === null || sales === null))
     return NextResponse.json(
@@ -205,5 +256,5 @@ export async function POST(req: Request) {
     return null;
   });
   if (problem) return NextResponse.json({ error: problem }, { status: 409 });
-  return NextResponse.json(summarise(await getDb(), account, holding, sales, now));
+  return NextResponse.json(summarise(await getDb(), account, holding, sales, bonuses, now));
 }

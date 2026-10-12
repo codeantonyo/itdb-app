@@ -301,6 +301,17 @@ export interface DbShape {
   megaAirdrops: Record<string, { claimedAt: number }>;
   /** ITDB ATMS placed, keyed by accountId, then city → how many */
   atmPlacements: Record<string, Record<string, number>>;
+  /** ITDB ATMS milestone crypto + gold credited, keyed by accountId, then wave % */
+  atmWaves: Record<string, Record<string, AtmWaveRecord>>;
+}
+
+/** One milestone wave's in-app rewards, fixed when they were credited. */
+export interface AtmWaveRecord {
+  at: number;
+  /** ITDBATMS they were credited on (bonus tokens excluded) */
+  basis: number;
+  crypto: { code: string; amount: number }[];
+  goldKg: number;
 }
 
 const DB_DIR = path.join(process.cwd(), "data");
@@ -352,6 +363,7 @@ const emptyDb = (): DbShape => ({
   referralPayouts: {},
   megaAirdrops: {},
   atmPlacements: {},
+  atmWaves: {},
 });
 
 const obj = <T>(v: unknown, fallback: T): T =>
@@ -406,6 +418,7 @@ function normalizeDb(db: Partial<DbShape>): DbShape {
     referralPayouts: obj(db.referralPayouts, {}),
     megaAirdrops: obj(db.megaAirdrops, {}),
     atmPlacements: obj(db.atmPlacements, {}),
+    atmWaves: obj(db.atmWaves, {}),
   };
 }
 
@@ -588,6 +601,8 @@ function splitDb(db: DbShape): Map<string, string> {
     out.set(`mega:${id}`, JSON.stringify(m));
   for (const [id, p] of Object.entries(db.atmPlacements))
     out.set(`atm:${id}`, JSON.stringify(p));
+  for (const [id, w] of Object.entries(db.atmWaves))
+    out.set(`atmwave:${id}`, JSON.stringify(w));
   return out;
 }
 
@@ -631,6 +646,8 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
       db.megaAirdrops[shard.slice(5)] = value as { claimedAt: number };
     else if (shard.startsWith("atm:"))
       db.atmPlacements[shard.slice(4)] = value as Record<string, number>;
+    else if (shard.startsWith("atmwave:"))
+      db.atmWaves[shard.slice(8)] = value as Record<string, AtmWaveRecord>;
   }
   db.accounts.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   return normalizeDb(db);
@@ -642,7 +659,7 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
  * deployment's shards survive a brief old/new instance overlap.
  */
 const OWNED_SHARD_RE =
-  /^(meta|otps|otpThrottle|loginThrottle|acquired)$|^(account|userstate|ledger|itdbone|qrs|airdrop|presale|qrsbonus|vault|refaward|refpay|mega|atm):/;
+  /^(meta|otps|otpThrottle|loginThrottle|acquired)$|^(account|userstate|ledger|itdbone|qrs|airdrop|presale|qrsbonus|vault|refaward|refpay|mega|atm|atmwave):/;
 
 function entryFromRow(row: {
   shard: string;

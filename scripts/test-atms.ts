@@ -5,6 +5,7 @@ import {
   ATM_CITIES, ATM_TIERS, TOTAL_ATMS, atmEntitlement, atmStage, atmTierFor, firstToReach, placementProblem, presaleWindow,
 } from "@/lib/itdb/atms";
 import { MAP_HEIGHT, MAP_WIDTH } from "@/lib/itdb/world-map";
+import { readDistributor } from "@/lib/server/atm-sales";
 
 // --- the network --------------------------------------------------------
 assert.equal(ATM_CITIES.length, 80);
@@ -65,4 +66,14 @@ assert.equal(presaleWindow([]).cutoff, END);
 assert.deepEqual([...firstToReach(sales, 10_000, 100)], ["B", "A"], "in the order they reached Tier 3");
 assert.deepEqual([...firstToReach(sales, 10_000, 1)], ["B"], "seats run out");
 
-console.log("ok — atms: 80 cities / 32 countries, tiers, 15k pre-sale = 75 then 150 ATMs, waves replace, placement limits, chain-ordered seats");
+// --- bonus payments are not sales ---------------------------------------------
+const D = "GA7I3HKV3AN7OSCKNU625D6SN6YDMMYTY3AUVXQ6HZQRNBY47M7AQQFS";
+const ISS = "GDEIVYTG65ECPXM2SMFPAL5GRFASAYDPDMJ6NY3WKMCWCRLOC2OAOATM";
+const pay = (to: string, amount: string, memo?: string) =>
+  ({ type: "payment", from: D, to, amount, asset_code: "ITDBATMS", asset_issuer: ISS, created_at: "2026-10-13T10:00:00Z",
+     transaction_hash: "h" + to, transaction: memo === undefined ? {} : { memo } }) as never;
+const chain = readDistributor([], [pay("A", "500"), pay("B", "2000", "ATMS W25"), pay("C", "7", "hello")]);
+assert.deepEqual(chain.sales.map((x) => x.wallet), ["A", "C"], "a W25 payment is not a sale");
+assert.deepEqual(chain.bonuses, [{ wallet: "B", amount: 2000, wave: 25, txHash: "hB" }]);
+
+console.log("ok — atms: 80 cities / 32 countries, tiers, 15k pre-sale = 75 then 150 ATMs, waves replace, placement limits, chain-ordered seats, bonus payments kept out of sales");

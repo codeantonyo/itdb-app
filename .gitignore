@@ -47,3 +47,4 @@ next-env.d.ts
 # Operator payout exports — contain member usernames and wallets
 payouts.json
 qrs-bonus-paid.json
+atms-wave-paid.json

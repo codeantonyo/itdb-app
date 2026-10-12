@@ -142,6 +142,13 @@ export const ATM_STAGES: AtmStage[] = [
   { pct: 100, medal: "👑", name: "The Final Wave", bonusPct: 500, extraPer10k: 100, cryptoPer1000: c4(1_000_000, 500_000), goldKg: 100, extraReturnPct: 20, perks: ["Lifetime royalties from the global ITDB ATMS network, paid weekly"] },
 ];
 
+/**
+ * Milestone bonus tokens are paid from the distributor with this memo +
+ * the wave ("ATMS W25"). scripts/pay-atms-wave.mjs writes it; the app
+ * reads it to tell sales from bonuses and to show members theirs arrived.
+ */
+export const WAVE_MEMO_PREFIX = "ATMS W";
+
 /** The wave reached by what has sold. Waves replace each other, never add. */
 export const atmStage = (sold: number) =>
   [...ATM_STAGES].reverse().find((s) => sold >= (ATMS_SUPPLY * s.pct) / 100) ?? null;

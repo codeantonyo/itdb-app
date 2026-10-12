@@ -303,11 +303,37 @@ function YourRewards({ s }: { s: AtmSummary }) {
         </p>
         {s.wave && (
           <div className="mt-4 border-t border-hairline pt-4">
-            <p className="label">Milestone wave — {s.wave.pct}% sold</p>
-            <p className="tnum mt-1 text-[13.5px] leading-relaxed text-primary">
-              +{fmt(s.wave.bonusTokens)} bonus ITDBATMS · {s.wave.goldKg} kg gold to your vault
-              {s.wave.crypto.some((c) => c.amount > 0) && ` · ${coins(s.wave.crypto)}`}
-            </p>
+            <p className="label">Milestone bonuses — {s.wave.pct}% sold</p>
+            <div className="mt-2 flex items-start justify-between gap-3">
+              <p className="tnum text-[13.5px] text-primary">+{fmt(s.wave.bonusTokens)} bonus ITDBATMS</p>
+              {s.wave.tokensSent > 0 ? (
+                <a
+                  href={`https://stellar.expert/explorer/public/tx/${s.wave.txHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 text-[12px] font-bold text-success"
+                >
+                  Sent to your wallet ✓
+                </a>
+              ) : (
+                <span className="shrink-0 text-[12px] font-semibold text-gold">Being sent to your wallet</span>
+              )}
+            </div>
+            <div className="mt-2 flex items-start justify-between gap-3">
+              <p className="tnum text-[13.5px] leading-relaxed text-primary">
+                {coins(s.wave.crypto.filter((c) => c.amount > 0))}
+                {s.wave.crypto.some((c) => c.amount > 0) && " · "}
+                {s.wave.goldKg} kg gold to your vault
+              </p>
+              <span className="shrink-0 text-[12px] font-bold text-success">
+                {s.wave.creditedAt ? "Credited ✓" : ""}
+              </span>
+            </div>
+            {s.wave.creditedAt && (
+              <p className="mt-1 text-[12px] text-muted-2">
+                Credited to your account {when(s.wave.creditedAt)} — see Portfolio.
+              </p>
+            )}
           </div>
         )}
       </div>

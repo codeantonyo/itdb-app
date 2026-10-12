@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Gift } from "lucide-react";
 import type { MegaSummary } from "@/app/api/mega-airdrop/route";
+import type { AtmSummary } from "@/app/api/atms/route";
 import { AppBar } from "@/components/layout/app-bar";
 import { AssetRow } from "@/components/shared/asset-row";
 import { ExactFigure } from "@/components/shared/exact-figure";
@@ -32,6 +33,8 @@ const HREF_OF: Record<string, string> = {
 export default function PortfolioPage() {
   const portfolio = usePortfolio();
   const mega = useJson<MegaSummary>("/api/mega-airdrop", 300_000);
+  const atms = useJson<AtmSummary>("/api/atms", 300_000);
+  const wave = atms.data?.wave?.creditedAt ? atms.data.wave : null;
   const [view, setView] = useState<"all" | "reserve">("all");
 
   const pending = portfolio.loading && portfolio.assets.length === 0;
@@ -88,6 +91,28 @@ export default function PortfolioPage() {
           <span className="min-w-0 flex-1">
             <span className="block text-[15.5px] font-semibold tracking-wide text-primary">MEGA AIRDROP</span>
             <span className="block text-[13px] text-muted">50 tonnes of assets being allocated to your vault</span>
+          </span>
+          <ChevronRight className="size-4 shrink-0 text-muted-2" />
+        </Link>
+      )}
+
+      {wave && (
+        <Link href="/atms" className="surface mt-4 flex items-center gap-3.5 p-4 transition-opacity active:opacity-70">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-success-soft text-success">
+            <Gift className="size-[21px]" strokeWidth={1.9} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15.5px] font-semibold tracking-wide text-primary">
+              ITDB ATMS · {wave.pct}% milestone bonuses
+            </span>
+            <span className="tnum block text-[13px] leading-snug text-muted">
+              {wave.crypto
+                .filter((c) => c.amount > 0)
+                .map((c) => `${c.amount.toLocaleString("en-US")} ${c.code}`)
+                .join(" · ")}
+              {wave.crypto.some((c) => c.amount > 0) && " · "}
+              {wave.goldKg} kg gold
+            </span>
           </span>
           <ChevronRight className="size-4 shrink-0 text-muted-2" />
         </Link>
