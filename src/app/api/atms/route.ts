@@ -14,6 +14,7 @@ import {
   nextAtmTier,
   placementProblem,
   presaleWindow,
+  discountWindow,
   type AtmSale,
   type AtmStage,
 } from "@/lib/itdb/atms";
@@ -40,6 +41,11 @@ export interface AtmSummary {
   presaleBought: number;
   /** Bonus 1 — paid when the pre-sale ends */
   bonusTokens: number;
+  /** Bonus ITDBATMS this member earned, and whether each has reached their wallet */
+  bonuses: { kind: "presale" | "discount"; amount: number; sent: number; txHash: string | null }[];
+  /** x2 on tier rewards, for buying before the tier discount */
+  rewardsMultiplier: number;
+  freeAtms: number;
   counted: number;
   tier: number | null;
   next: { tier: number; min: number; needed: number } | null;
@@ -106,16 +112,41 @@ function waveRecord(stage: AtmStage, basis: number, at: number): AtmWaveRecord {
   return { at, basis, crypto: stage.cryptoPer1000.map((c) => ({ code: c.code, amount: c.amount * k })), goldKg: stage.goldKg };
 }
 
-function entitlementOf(account: DbAccount, holding: number, sales: AtmSale[] | null, now: number) {
+function entitlementOf(account: DbAccount, holding: number, sales: AtmSale[] | null, bonuses: AtmBonusPayment[], now: number) {
   const list = sales ?? [];
   const window = presaleWindow(list);
   const wallets = new Set(account.wallets);
-  const presaleBought = list
-    .filter((s) => wallets.has(s.wallet) && s.at <= window.cutoff)
-    .reduce((t, s) => t + s.amount, 0);
-  const sold = list.reduce((t, s) => t + s.amount, 0);
-  const e = atmEntitlement({ holding, presaleBought, presaleEnded: now >= window.endsAt, sold });
+  const mine = list.filter((s) => wallets.has(s.wallet));
+  const sum = (xs: { amount: number }[]) => xs.reduce((t, x) => t + x.amount, 0);
+  const presaleBought = sum(mine.filter((s) => s.at <= window.cutoff));
+  const d = discountWindow();
+  const discountBought = d ? sum(mine.filter((s) => s.at >= d.startsAt && s.at < d.endsAt)) : 0;
+  const sold = sum(list);
+  const e = atmEntitlement({
+    holding,
+    presaleBought,
+    presaleEnded: now >= window.endsAt,
+    discountBought,
+    discountEnded: !!d && now >= d.endsAt,
+    boughtBefore: !!d && mine.some((s) => s.at < d.startsAt),
+    paid: {
+      presale: sum(bonuses.filter((b) => b.kind === "presale")),
+      discount: sum(bonuses.filter((b) => b.kind === "discount")),
+    },
+    sold,
+  });
   return { ...e, window, presaleBought, sold };
+}
+
+function bonusRows(e: ReturnType<typeof entitlementOf>, bonuses: AtmBonusPayment[]): AtmSummary["bonuses"] {
+  const row = (kind: "presale" | "discount", amount: number) => {
+    const paid = bonuses.filter((b) => b.kind === kind);
+    return { kind, amount, sent: paid.reduce((t, b) => t + b.amount, 0), txHash: paid[0]?.txHash ?? null };
+  };
+  return [
+    ...(e.bonusTokens > 0 ? [row("presale", e.bonusTokens)] : []),
+    ...(e.discountBonus > 0 ? [row("discount", e.discountBonus)] : []),
+  ];
 }
 
 function summarise(
@@ -126,7 +157,7 @@ function summarise(
   bonuses: AtmBonusPayment[],
   now = Date.now(),
 ): AtmSummary {
-  const e = entitlementOf(account, holding ?? 0, sales, now);
+  const e = entitlementOf(account, holding ?? 0, sales, bonuses, now);
   const taken = byCity(db);
   const placed = Object.values(taken).reduce((s, n) => s + n, 0);
   const mine = db.atmPlacements[account.id] ?? {};
@@ -152,6 +183,9 @@ function summarise(
     holding,
     presaleBought: e.presaleBought,
     bonusTokens: e.bonusTokens,
+    bonuses: bonusRows(e, bonuses),
+    rewardsMultiplier: e.rewardsMultiplier,
+    freeAtms: e.freeAtms,
     counted: e.counted,
     tier: e.tier?.tier ?? null,
     next: nxt ? { tier: nxt.tier, min: nxt.min, needed: Math.max(nxt.min - e.counted, 0) } : null,
@@ -164,7 +198,13 @@ function summarise(
       .map(([city, count]) => ({ city, count }))
       .sort((a, b) => b.count - a.count),
 
-    rewards: e.tier ? { daily: e.tier.daily, crypto: dailyCrypto(e.tier), returnPct: e.tier.returnPct } : null,
+    rewards: e.tier
+      ? {
+          daily: e.tier.daily * e.rewardsMultiplier,
+          crypto: dailyCrypto(e.tier).map((c) => ({ ...c, amount: c.amount * e.rewardsMultiplier })),
+          returnPct: e.tier.returnPct,
+        }
+      : null,
     presaleCrypto:
       e.presaleBought >= ATM_TIERS[0].min
         ? PRESALE_CRYPTO_PER_1000.map((c) => ({ code: c.code, amount: c.amount * Math.floor(e.presaleBought / 1_000) }))
@@ -207,7 +247,7 @@ export async function GET(req: Request) {
   // 1,000+ opens this — automatically, once per wave. An unreadable
   // holding decides nothing.
   if (holding !== null && sales !== null) {
-    const { stage } = entitlementOf(account, holding, sales, Date.now());
+    const { stage } = entitlementOf(account, holding, sales, bonuses, Date.now());
     const basis = basisOf(holding, bonuses);
     if (stage && basis >= ATM_TIERS[0].min && !(await getDb()).atmWaves[account.id]?.[stage.pct])
       await mutateDb((db) => {
@@ -246,7 +286,7 @@ export async function POST(req: Request) {
     );
 
   const now = Date.now();
-  const { allowed } = entitlementOf(account, holding ?? 0, sales, now);
+  const { allowed } = entitlementOf(account, holding ?? 0, sales, bonuses, now);
   const problem = await mutateDb((db) => {
     const mine = (db.atmPlacements[account.id] ??= {});
     const p = placementProblem(city, count, mine, byCity(db, account.id)[city] ?? 0, allowed);

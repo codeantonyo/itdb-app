@@ -131,6 +131,7 @@ export default function AtmsPage() {
 
       {atms.error && !s && <NetworkNotice message={atms.error} onRetry={atms.refresh} />}
       {!s ? <Skeleton className="h-[160px] rounded-2xl" /> : <YourAtms s={s} onEdit={setPlacing} />}
+      {s && s.bonuses.length > 0 && <BonusTokens s={s} />}
       {s && <YourRewards s={s} />}
       {s && <PresaleBonuses s={s} />}
       <Roadmap s={s} />
@@ -260,9 +261,10 @@ function YourAtms({ s, onEdit }: { s: AtmSummary; onEdit: (city: string) => void
           <>
             <p className="font-display text-[34px] font-semibold leading-none text-gold">{fmt(s.allowed)} ATMs</p>
             <p className="tnum mt-2 text-[13px] text-muted">
-              Tier {s.tier}: {s.baseAtms}
+              {s.tier ? `Tier ${s.tier}: ${s.baseAtms}` : "Below Tier 1: 0"}
               {s.multiplier > 1 && ` × ${s.multiplier} pre-sale multiplier`}
               {s.waveExtra > 0 && ` + ${fmt(s.waveExtra)} from the milestone wave`}
+              {s.freeAtms > 0 && ` + ${s.freeAtms} free for every holder`}
             </p>
             {s.placements.length > 0 && (
               <div className="mt-4 divide-y divide-hairline border-t border-hairline">
@@ -287,12 +289,49 @@ function YourAtms({ s, onEdit }: { s: AtmSummary; onEdit: (city: string) => void
   );
 }
 
+const BONUS_TITLE = { presale: "Pre-sale — tokens doubled", discount: "Tier discount — tokens doubled" };
+
+function BonusTokens({ s }: { s: AtmSummary }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <SectionHeader title="Your bonus tokens" />
+      <div className="surface divide-y divide-hairline">
+        {s.bonuses.map((b) => (
+          <div key={b.kind} className="flex items-center gap-3 px-4 py-3.5">
+            <span className="min-w-0 flex-1">
+              <span className="block text-[14.5px] font-semibold text-primary">{BONUS_TITLE[b.kind]}</span>
+              <span className="tnum block text-[13px] text-muted">+{fmt(b.amount)} ITDBATMS · counted in your tier</span>
+            </span>
+            {b.sent > 0 ? (
+              <a
+                href={`https://stellar.expert/explorer/public/tx/${b.txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="shrink-0 text-[12px] font-bold text-success"
+              >
+                Sent ✓
+              </a>
+            ) : (
+              <span className="shrink-0 text-[12px] font-semibold text-gold">Being sent</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function YourRewards({ s }: { s: AtmSummary }) {
   if (!s.rewards) return null;
   return (
     <section className="flex flex-col gap-3">
       <SectionHeader title="Your rewards" note={`Tier ${s.tier}`} />
       <div className="surface p-5">
+        {s.rewardsMultiplier > 1 && (
+          <p className="mb-3 rounded-xl bg-gold-soft px-3.5 py-2.5 text-[13px] font-semibold text-gold">
+            x{s.rewardsMultiplier} rewards — you bought before the tier discount
+          </p>
+        )}
         <p className="text-[13px] text-muted">Daily app balance</p>
         <p className="font-display mt-0.5 text-[30px] font-semibold leading-none text-primary">${fmt(s.rewards.daily)} / day</p>
         <p className="label mt-4">Daily crypto rewards</p>
@@ -353,7 +392,11 @@ function PresaleBonuses({ s }: { s: AtmSummary }) {
     {
       title: "1 · Your tokens doubled",
       detail: "Hold 1,000+ ITDBATMS from the pre-sale and receive 100% bonus tokens when it ends. Your tier updates with them.",
-      mine: holder ? `+${fmt(s.bonusTokens)} ITDBATMS${p?.ended ? "" : " when the pre-sale ends"}` : undefined,
+      mine: holder
+        ? `+${fmt(s.bonusTokens)} ITDBATMS${
+            s.bonuses.some((b) => b.kind === "presale" && b.sent > 0) ? " — sent to your wallet ✓" : p.ended ? " — being sent to your wallet" : " when the pre-sale ends"
+          }`
+        : undefined,
     },
     {
       title: "2 · Your ATMs multiplied",

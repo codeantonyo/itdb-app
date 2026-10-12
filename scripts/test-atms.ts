@@ -22,25 +22,25 @@ assert.equal(atmTierFor(1_000_000)?.tier, 10);
 assert.deepEqual(ATM_TIERS.map((t) => t.atms), [1, 3, 5, 10, 20, 30, 40, 60, 80, 100]);
 
 // --- the worked example: 15,000 bought in the pre-sale --------------------
-const during = atmEntitlement({ holding: 15_000, presaleBought: 15_000, presaleEnded: false, sold: 0 });
+const during = atmEntitlement({ discountBought: 0, discountEnded: false, boughtBefore: false, paid: { presale: 0, discount: 0 }, holding: 15_000, presaleBought: 15_000, presaleEnded: false, sold: 0 });
 assert.equal(during.tier?.tier, 3);
 assert.equal(during.multiplier, 15);
-assert.equal(during.allowed, 75, "5 × 15 = 75");
+assert.equal(during.allowed, 75 + 10, "5 × 15 = 75, plus the 10 free");
 // Pre-sale over: tokens double → 30,000 → Tier 4 (10 ATMs, not 5 + 10), multiplier stays 15.
-const after = atmEntitlement({ holding: 15_000, presaleBought: 15_000, presaleEnded: true, sold: 0 });
+const after = atmEntitlement({ discountBought: 0, discountEnded: false, boughtBefore: false, paid: { presale: 0, discount: 0 }, holding: 15_000, presaleBought: 15_000, presaleEnded: true, sold: 0 });
 assert.equal(after.tier?.tier, 4, "tier updates with the doubled tokens");
 assert.equal(after.multiplier, 15, "doubling does not raise the multiplier");
-assert.equal(after.allowed, 150);
+assert.equal(after.allowed, 150 + 10);
 // Bought after the pre-sale: no multiplier, no doubling.
-assert.equal(atmEntitlement({ holding: 15_000, presaleBought: 0, presaleEnded: true, sold: 0 }).allowed, 5);
-assert.equal(atmEntitlement({ holding: 999, presaleBought: 999, presaleEnded: true, sold: 0 }).allowed, 0, "below Tier 1");
+assert.equal(atmEntitlement({ discountBought: 0, discountEnded: false, boughtBefore: false, paid: { presale: 0, discount: 0 }, holding: 15_000, presaleBought: 0, presaleEnded: true, sold: 0 }).allowed, 5 + 10);
+assert.equal(atmEntitlement({ discountBought: 0, discountEnded: false, boughtBefore: false, paid: { presale: 0, discount: 0 }, holding: 999, presaleBought: 999, presaleEnded: true, sold: 0 }).allowed, 10, "below Tier 1: only the 10 free");
 
 // --- milestone waves replace, never add -----------------------------------
 assert.equal(atmStage(249_999), null);
 assert.equal(atmStage(500_000)?.extraPer10k, 20);
-const wave = atmEntitlement({ holding: 25_000, presaleBought: 0, presaleEnded: true, sold: 760_000 });
+const wave = atmEntitlement({ discountBought: 0, discountEnded: false, boughtBefore: false, paid: { presale: 0, discount: 0 }, holding: 25_000, presaleBought: 0, presaleEnded: true, sold: 760_000 });
 assert.equal(wave.waveExtra, 2 * 50, "75% wave: 50 per 10,000 held, not 10+20+50");
-assert.equal(wave.allowed, 10 + 100);
+assert.equal(wave.allowed, 10 + 100 + 10);
 
 // --- placing ATMs -----------------------------------------------------------
 assert.equal(placementProblem("Paris", 3, {}, 47, 5), null, "fills the city exactly");
@@ -72,8 +72,25 @@ const ISS = "GDEIVYTG65ECPXM2SMFPAL5GRFASAYDPDMJ6NY3WKMCWCRLOC2OAOATM";
 const pay = (to: string, amount: string, memo?: string) =>
   ({ type: "payment", from: D, to, amount, asset_code: "ITDBATMS", asset_issuer: ISS, created_at: "2026-10-13T10:00:00Z",
      transaction_hash: "h" + to, transaction: memo === undefined ? {} : { memo } }) as never;
-const chain = readDistributor([], [pay("A", "500"), pay("B", "2000", "ATMS W25"), pay("C", "7", "hello")]);
-assert.deepEqual(chain.sales.map((x) => x.wallet), ["A", "C"], "a W25 payment is not a sale");
-assert.deepEqual(chain.bonuses, [{ wallet: "B", amount: 2000, wave: 25, txHash: "hB" }]);
+const chain = readDistributor([], [pay("A", "500"), pay("B", "2000", "ATMS W25"), pay("C", "7", "hello"), pay("E", "900", "ATMS PRE"), pay("F", "40", "ATMS DSC")]);
+assert.deepEqual(chain.sales.map((x) => x.wallet), ["A", "C"], "bonus payments are not sales");
+assert.deepEqual(
+  chain.bonuses.map((b) => [b.wallet, b.kind, b.wave]),
+  [["B", "wave", 25], ["E", "presale", 0], ["F", "discount", 0]],
+);
+
+// --- the tier discount: tokens → new tier → doubled rewards ------------------
+const base = { presaleBought: 0, presaleEnded: true, discountEnded: true, paid: { presale: 0, discount: 0 }, sold: 0 };
+// Bought 3,000 before and 4,000 during: holds 7,000 (Tier 2). Doubled during-tokens → 11,000 → Tier 3, rewards x2 on Tier 3.
+const both = atmEntitlement({ ...base, holding: 7_000, discountBought: 4_000, boughtBefore: true });
+assert.equal(both.counted, 11_000);
+assert.equal(both.tier?.tier, 3, "the tier is read after the tokens are doubled");
+assert.equal(both.rewardsMultiplier, 2, "then rewards are doubled on that new tier");
+assert.equal(atmEntitlement({ ...base, holding: 4_000, discountBought: 4_000, boughtBefore: false }).rewardsMultiplier, 1, "only during: tokens, not rewards");
+// Once the doubling has been paid it is in the holding — never counted twice.
+assert.equal(atmEntitlement({ ...base, holding: 11_000, discountBought: 4_000, boughtBefore: true, paid: { presale: 0, discount: 4_000 } }).counted, 11_000);
+// 10 free ATMs for every holder, even below Tier 1.
+assert.equal(atmEntitlement({ ...base, holding: 5, discountBought: 0, boughtBefore: false }).allowed, 10);
+assert.equal(atmEntitlement({ ...base, holding: 0, discountBought: 0, boughtBefore: false }).allowed, 0);
 
 console.log("ok — atms: 80 cities / 32 countries, tiers, 15k pre-sale = 75 then 150 ATMs, waves replace, placement limits, chain-ordered seats, bonus payments kept out of sales");

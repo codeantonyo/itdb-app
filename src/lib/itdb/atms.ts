@@ -143,11 +143,28 @@ export const ATM_STAGES: AtmStage[] = [
 ];
 
 /**
- * Milestone bonus tokens are paid from the distributor with this memo +
- * the wave ("ATMS W25"). scripts/pay-atms-wave.mjs writes it; the app
- * reads it to tell sales from bonuses and to show members theirs arrived.
+ * Bonus ITDBATMS are paid from the distributor with a memo starting
+ * "ATMS ": "ATMS PRE" (pre-sale doubling), "ATMS DSC" (tier-discount
+ * doubling), "ATMS W25" (a milestone wave). scripts/pay-atms-wave.mjs
+ * writes them; the app reads them to tell sales from bonuses and to show
+ * members theirs arrived.
  */
-export const WAVE_MEMO_PREFIX = "ATMS W";
+export const BONUS_MEMO_PREFIX = "ATMS ";
+export const BONUS_MEMO = { presale: "ATMS PRE", discount: "ATMS DSC", wave: (pct: number) => `ATMS W${pct}` };
+
+/* ------------------------------------------------------------------ */
+/*  The tier discount                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The tier-system discount ended 12 Oct 2026 at 13:00 Romania time.
+ * Its START decides who bought "before" (rewards x2) and who bought
+ * "during" (tokens x2); until it is set, neither applies.
+ */
+export const DISCOUNT_STARTS_AT: string | null = null;
+export const DISCOUNT_ENDS_AT = "2026-10-12T10:00:00Z";
+/** Every ITDBATMS holder, whatever they hold. */
+export const FREE_ATMS = 10;
 
 /** The wave reached by what has sold. Waves replace each other, never add. */
 export const atmStage = (sold: number) =>
@@ -163,40 +180,65 @@ export interface AtmEntitlementInput {
   /** Bought from the distributor inside the pre-sale window */
   presaleBought: number;
   presaleEnded: boolean;
+  /** Bought from the distributor while the tier discount ran */
+  discountBought: number;
+  discountEnded: boolean;
+  /** Bought anything before the tier discount began */
+  boughtBefore: boolean;
+  /** Bonus ITDBATMS already received on chain — already in `holding` */
+  paid: { presale: number; discount: number };
   sold: number;
 }
 
 /**
- * What a member's ITDBATMS are worth in ATMs.
+ * What a member's ITDBATMS are worth.
  *
- *   tier         from the holding, plus — once the pre-sale has ended —
- *                the 100% bonus on pre-sale tokens (Bonus 1). Tiers
- *                replace: Tier 3 → 4 means 10 ATMs, not 5 + 10.
+ *   tier         from the holding plus any bonus tokens earned but not
+ *                yet received: the pre-sale doubling (Bonus 1) once the
+ *                pre-sale ended, the discount doubling once the discount
+ *                ended. Received bonuses are already in the holding.
+ *                Tiers replace: Tier 3 → 4 is 10 ATMs, not 5 + 10.
  *   multiplier   1x per 1,000 bought IN THE PRE-SALE (Bonus 2). The
  *                token doubling does not raise it.
  *   wave extra   per 10,000 held, from the current milestone wave.
+ *   free         10 ATMs for every holder.
+ *   rewards x2   for anyone who bought before the discount — applied to
+ *                the tier reached AFTER their tokens are doubled.
  *
- *   allowed = tier ATMs × multiplier + wave extra
+ *   allowed = tier ATMs × multiplier + wave extra + free
  */
-export function atmEntitlement({ holding, presaleBought, presaleEnded, sold }: AtmEntitlementInput) {
-  const presaleHolder = presaleBought >= ATM_TIERS[0].min;
-  const bonusTokens = presaleHolder ? presaleBought : 0;
-  const counted = holding + (presaleEnded ? bonusTokens : 0);
+export function atmEntitlement(i: AtmEntitlementInput) {
+  const presaleHolder = i.presaleBought >= ATM_TIERS[0].min;
+  const bonusTokens = presaleHolder ? i.presaleBought : 0;
+  const discountBonus = i.discountBought;
+  const pending =
+    (i.presaleEnded && i.paid.presale === 0 ? bonusTokens : 0) +
+    (i.discountEnded && i.paid.discount === 0 ? discountBonus : 0);
+  const counted = i.holding + pending;
   const tier = atmTierFor(counted);
-  const multiplier = presaleHolder ? Math.floor(presaleBought / 1_000) : 1;
-  const stage = holding >= ATM_TIERS[0].min ? atmStage(sold) : null;
-  const waveExtra = stage ? Math.floor(holding / 10_000) * stage.extraPer10k : 0;
+  const multiplier = presaleHolder ? Math.floor(i.presaleBought / 1_000) : 1;
+  const stage = i.holding >= ATM_TIERS[0].min ? atmStage(i.sold) : null;
+  const waveExtra = stage ? Math.floor(i.holding / 10_000) * stage.extraPer10k : 0;
+  const freeAtms = i.holding > 0 ? FREE_ATMS : 0;
   const baseAtms = tier?.atms ?? 0;
   return {
     counted,
     tier,
     bonusTokens,
+    discountBonus,
     multiplier,
     stage,
     baseAtms,
     waveExtra,
-    allowed: baseAtms * multiplier + waveExtra,
+    freeAtms,
+    rewardsMultiplier: i.boughtBefore ? 2 : 1,
+    allowed: baseAtms * multiplier + waveExtra + freeAtms,
   };
+}
+
+/** The discount window, or null until its start is set. */
+export function discountWindow(): { startsAt: number; endsAt: number } | null {
+  return DISCOUNT_STARTS_AT ? { startsAt: Date.parse(DISCOUNT_STARTS_AT), endsAt: Date.parse(DISCOUNT_ENDS_AT) } : null;
 }
 
 /**

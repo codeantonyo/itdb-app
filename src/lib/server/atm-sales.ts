@@ -1,4 +1,4 @@
-import { ATMS_DISTRIBUTOR, ATMS_ISSUER, WAVE_MEMO_PREFIX, type AtmSale } from "@/lib/itdb/atms";
+import { ATMS_DISTRIBUTOR, ATMS_ISSUER, BONUS_MEMO, BONUS_MEMO_PREFIX, type AtmSale } from "@/lib/itdb/atms";
 import { HORIZON } from "@/lib/stellar/horizon";
 import { horizonFetch } from "@/lib/stellar/horizon-fetch";
 
@@ -8,7 +8,8 @@ import { horizonFetch } from "@/lib/stellar/horizon-fetch";
  * so the pre-sale buyers, the council seats and the amount sold all come
  * from one place nobody can edit.
  *
- * Milestone bonus tokens leave the same account, tagged "ATMS W<pct>".
+ * Bonus tokens leave the same account, tagged "ATMS PRE" / "ATMS DSC" /
+ * "ATMS W<pct>".
  * Those are NOT sales — counting them would push "sold" up and unlock
  * the next wave on bonuses alone — so they are kept apart.
  */
@@ -18,7 +19,8 @@ type Rec = Record<string, string> & { transaction?: { memo?: string } };
 export interface AtmBonusPayment {
   wallet: string;
   amount: number;
-  /** The wave it was paid for: 25, 50, 75 or 100 */
+  kind: "presale" | "discount" | "wave";
+  /** For a wave bonus: 25, 50, 75 or 100 */
   wave: number;
   txHash: string;
 }
@@ -63,9 +65,11 @@ export function readDistributor(trades: Rec[], payments: Rec[]): Chain {
     if (p.from !== ATMS_DISTRIBUTOR || !isAtms(p.asset_code, p.asset_issuer) || p.to === ATMS_ISSUER) continue;
     if (p.type !== "payment" && !p.type?.startsWith("path_payment")) continue;
     const memo = p.transaction?.memo ?? "";
-    if (memo.startsWith(WAVE_MEMO_PREFIX))
-      bonuses.push({ wallet: p.to, amount: Number(p.amount), wave: Number(memo.slice(WAVE_MEMO_PREFIX.length)), txHash: p.transaction_hash });
-    else sales.push({ wallet: p.to, amount: Number(p.amount), at: Date.parse(p.created_at) });
+    if (memo.startsWith(BONUS_MEMO_PREFIX)) {
+      const kind = memo === BONUS_MEMO.presale ? "presale" : memo === BONUS_MEMO.discount ? "discount" : "wave";
+      const wave = kind === "wave" ? Number(memo.slice(BONUS_MEMO.wave(0).length - 1)) || 0 : 0;
+      bonuses.push({ wallet: p.to, amount: Number(p.amount), kind, wave, txHash: p.transaction_hash });
+    } else sales.push({ wallet: p.to, amount: Number(p.amount), at: Date.parse(p.created_at) });
   }
   sales.sort((a, b) => a.at - b.at);
   return { sales, bonuses };
