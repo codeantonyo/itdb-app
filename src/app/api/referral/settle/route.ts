@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/server/db";
-import { ensureReferralAwards, qualifiedAt } from "@/lib/server/referral";
+import { ensureBuy } from "@/lib/server/referral-program";
 import { payoutStatus, settleReferralRewards } from "@/lib/server/referral-payout";
 
 export const maxDuration = 60;
 
-/** Referrals to re-check for Tier 2 per run, oldest unqualified first. */
+/** Referred members to re-check for their 100 XLM per run, newest first. */
 const CHECK_PER_RUN = 30;
 
 /**
  * GET /api/referral/settle: the scheduled backstop (vercel.json cron).
  *
- * Page opens already qualify referrals and pay rewards; this catches the
- * ones nobody opened a page for: it re-checks unqualified referrals
- * against the chain, then pays whatever is owed.
+ * Page opens already credit referrals; this catches the ones nobody opened
+ * a page for: it re-checks referred members who have not yet invested
+ * 100 XLM, then pays what the earlier on-chain program still owes.
  *
  * Open to any caller unless CRON_SECRET is set. That is deliberate:
  * settling only ever pays what is already owed, once, under the daily
@@ -34,10 +34,10 @@ export async function GET(req: Request) {
 
   const db = await getDb();
   const unqualified = db.accounts
-    .filter((a) => a.referredBy && !qualifiedAt(db, a.id))
-    .sort((a, b) => a.createdAt - b.createdAt)
+    .filter((a) => a.referredBy && !db.referralBuys[a.id])
+    .sort((a, b) => b.createdAt - a.createdAt)
     .slice(0, CHECK_PER_RUN);
-  for (const a of unqualified) await ensureReferralAwards(a);
+  for (const a of unqualified) await ensureBuy(a);
 
   const report = await settleReferralRewards();
   return NextResponse.json({ checked: unqualified.length, ...report });

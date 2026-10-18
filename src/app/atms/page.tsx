@@ -265,6 +265,7 @@ function YourAtms({ s, onEdit }: { s: AtmSummary; onEdit: (city: string) => void
               {s.multiplier > 1 && ` × ${s.multiplier} pre-sale multiplier`}
               {s.waveExtra > 0 && ` + ${fmt(s.waveExtra)} from the milestone wave`}
               {s.freeAtms > 0 && ` + ${s.freeAtms} free for every holder`}
+              {s.ladderAtms > 0 && ` + ${s.ladderAtms} from referrals`}
             </p>
             {s.placements.length > 0 && (
               <div className="mt-4 divide-y divide-hairline border-t border-hairline">

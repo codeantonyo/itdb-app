@@ -21,6 +21,7 @@ import {
 import { atmChain, type AtmBonusPayment } from "@/lib/server/atm-sales";
 import { getDb, mutateDb, type AtmWaveRecord, type DbAccount, type DbShape } from "@/lib/server/db";
 import { memberHoldings, tokenBalance } from "@/lib/server/holdings";
+import { ladderBonus } from "@/lib/server/referral-program";
 import { sessionAccountId } from "@/lib/server/session";
 import { ITDBATMS_TOKEN } from "@/lib/stellar/registry";
 
@@ -46,6 +47,8 @@ export interface AtmSummary {
   /** x2 on tier rewards, for buying before the tier discount */
   rewardsMultiplier: number;
   freeAtms: number;
+  /** From the referral ladder */
+  ladderAtms: number;
   counted: number;
   tier: number | null;
   next: { tier: number; min: number; needed: number } | null;
@@ -192,7 +195,8 @@ function summarise(
     baseAtms: e.baseAtms,
     multiplier: e.multiplier,
     waveExtra: e.waveExtra,
-    allowed: e.allowed,
+    ladderAtms: ladderBonus(db, account.id).atms,
+    allowed: e.allowed + ladderBonus(db, account.id).atms,
     placements: Object.entries(mine)
       .filter(([, n]) => n > 0)
       .map(([city, count]) => ({ city, count }))
@@ -289,7 +293,7 @@ export async function POST(req: Request) {
   const { allowed } = entitlementOf(account, holding ?? 0, sales, bonuses, now);
   const problem = await mutateDb((db) => {
     const mine = (db.atmPlacements[account.id] ??= {});
-    const p = placementProblem(city, count, mine, byCity(db, account.id)[city] ?? 0, allowed);
+    const p = placementProblem(city, count, mine, byCity(db, account.id)[city] ?? 0, allowed + ladderBonus(db, account.id).atms);
     if (p) return p;
     if (count === 0) delete mine[city];
     else mine[city] = count;

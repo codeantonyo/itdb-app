@@ -303,6 +303,10 @@ export interface DbShape {
   atmPlacements: Record<string, Record<string, number>>;
   /** ITDB ATMS milestone crypto + gold credited, keyed by accountId, then wave % */
   atmWaves: Record<string, Record<string, AtmWaveRecord>>;
+  /** Referred members who invested 100+ XLM, keyed by their accountId */
+  referralBuys: Record<string, { at: number; xlm: number }>;
+  /** The ICO each member picked per referral credit: accountId → credit key → code */
+  referralChoices: Record<string, Record<string, string>>;
 }
 
 /** One milestone wave's in-app rewards, fixed when they were credited. */
@@ -364,6 +368,8 @@ const emptyDb = (): DbShape => ({
   megaAirdrops: {},
   atmPlacements: {},
   atmWaves: {},
+  referralBuys: {},
+  referralChoices: {},
 });
 
 const obj = <T>(v: unknown, fallback: T): T =>
@@ -419,6 +425,8 @@ function normalizeDb(db: Partial<DbShape>): DbShape {
     megaAirdrops: obj(db.megaAirdrops, {}),
     atmPlacements: obj(db.atmPlacements, {}),
     atmWaves: obj(db.atmWaves, {}),
+    referralBuys: obj(db.referralBuys, {}),
+    referralChoices: obj(db.referralChoices, {}),
   };
 }
 
@@ -603,6 +611,10 @@ function splitDb(db: DbShape): Map<string, string> {
     out.set(`atm:${id}`, JSON.stringify(p));
   for (const [id, w] of Object.entries(db.atmWaves))
     out.set(`atmwave:${id}`, JSON.stringify(w));
+  for (const [id, b] of Object.entries(db.referralBuys))
+    out.set(`refbuy:${id}`, JSON.stringify(b));
+  for (const [id, c] of Object.entries(db.referralChoices))
+    out.set(`refpick:${id}`, JSON.stringify(c));
   return out;
 }
 
@@ -648,6 +660,10 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
       db.atmPlacements[shard.slice(4)] = value as Record<string, number>;
     else if (shard.startsWith("atmwave:"))
       db.atmWaves[shard.slice(8)] = value as Record<string, AtmWaveRecord>;
+    else if (shard.startsWith("refbuy:"))
+      db.referralBuys[shard.slice(7)] = value as { at: number; xlm: number };
+    else if (shard.startsWith("refpick:"))
+      db.referralChoices[shard.slice(8)] = value as Record<string, string>;
   }
   db.accounts.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   return normalizeDb(db);
@@ -659,7 +675,7 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
  * deployment's shards survive a brief old/new instance overlap.
  */
 const OWNED_SHARD_RE =
-  /^(meta|otps|otpThrottle|loginThrottle|acquired)$|^(account|userstate|ledger|itdbone|qrs|airdrop|presale|qrsbonus|vault|refaward|refpay|mega|atm|atmwave):/;
+  /^(meta|otps|otpThrottle|loginThrottle|acquired)$|^(account|userstate|ledger|itdbone|qrs|airdrop|presale|qrsbonus|vault|refaward|refpay|mega|atm|atmwave|refbuy|refpick):/;
 
 function entryFromRow(row: {
   shard: string;

@@ -1,196 +1,218 @@
 import { NextResponse, after } from "next/server";
-import { getDb, mutateDb, type DbAccount, type ReferralPayout } from "@/lib/server/db";
+import { ICO_CODES, LADDER, type LadderStep } from "@/lib/itdb/referral-program";
+import { getDb, mutateDb, type DbAccount, type DbShape, type ReferralPayout } from "@/lib/server/db";
+import { MONTHLY_PRIZES, REFERRAL_WINDOW_MS, referralProblem, refereesOf, referrerOf } from "@/lib/server/referral";
+import { payoutConfig, settleReferralRewards } from "@/lib/server/referral-payout";
 import {
-  MONTHLY_PRIZES,
-  REFERRAL_TOKENS,
-  REFERRAL_WINDOW_MS,
-  ensureReferralAwards,
-  leaderboard,
-  qualifiedAt,
-  referralProblem,
-  refereesOf,
-  referrerOf,
-  type LeaderRow,
-} from "@/lib/server/referral";
-import { HOLD_DAYS, payoutConfig, settleReferralRewards } from "@/lib/server/referral-payout";
+  countedReferees,
+  creditsOf,
+  ensureBuy,
+  giveawayBoard,
+  topReferrers,
+  type BoardRow,
+  type Credit,
+} from "@/lib/server/referral-program";
 import { sessionAccountId } from "@/lib/server/session";
 
-/** Room for a few Stellar payments after the response has gone. */
+/** Room for Horizon reads and a few legacy payments after the response. */
 export const maxDuration = 60;
 
 export type RewardStatus = "waiting" | "queued" | "sending" | "paid" | "blocked";
 
+/** A reward from the earlier on-chain program (10,000 ITDB) */
 export interface RewardView {
   amount: number;
   status: RewardStatus;
   txHash?: string;
-  /** Why it has not been paid yet, in words the member can act on */
   note?: string;
 }
 
-export interface RefereeRow {
+export interface FriendRow {
   username: string;
   joinedAt: number;
-  qualifiedAt: number | null;
-  /** What qualified them — Tier 2 in these tokens */
-  tokens: string[];
-  /** Your reward for this referral */
-  reward: RewardView;
+  /** When they crossed 100 XLM invested, or null */
+  boughtAt: number | null;
+  /** Counted toward the ladder and boards (the daily cap can leave one out) */
+  counted: boolean;
 }
 
 export interface ReferralSummary {
   code: string;
-  /** The link to share; the app captures ?ref= and pre-fills sign-up */
   link: string;
-  /** Who referred me, if anyone */
   referrer: string | null;
-  /** Until when I may still add a code, or null when I no longer can */
   addCodeUntil: number | null;
-  /** ITDB per side, per qualified referral; also what the new member must hold */
-  perReferral: number;
-  /** Days they must hold it, unbroken, before either side is paid */
-  holdDays: number;
-  /** Whether rewards are being sent on chain right now */
-  sending: boolean;
-  /** My own reward for joining through a referral, once I qualify */
-  myReward: RewardView | null;
-  referees: RefereeRow[];
-  /** ITDB received on chain as a referrer, and still to come */
-  received: number;
-  owed: number;
-  tiers: { token: string; tier2: number }[];
-  month: { label: string; rows: (LeaderRow & { rank: number })[]; myRank: number | null };
-  lastMonth: { label: string; winners: (LeaderRow & { rank: number })[] };
+
+  credits: Credit[];
+  /** Totals across credits: USDC, and tokens per picked ICO plus those still to pick */
+  totals: { usdc: number; tokens: Record<string, number>; unpicked: number };
+
+  friends: FriendRow[];
+  brought: number;
+  qualified: number;
+  step: LadderStep | null;
+  next: LadderStep | null;
+
+  month: { label: string; rows: (BoardRow & { rank: number })[]; myRank: number | null };
+  lastMonth: { label: string; winners: (BoardRow & { rank: number })[] };
   prizes: typeof MONTHLY_PRIZES;
+
+  giveaway: { rows: (BoardRow & { rank: number })[]; mine: number; myRank: number | null };
+
+  /** The earlier 10,000-ITDB program — shown only to those it still owes or has paid */
+  legacy: { received: number; owed: number; rows: (RewardView & { who: string })[] } | null;
 }
 
 const monthLabel = (y: number, m: number) =>
   new Date(Date.UTC(y, m, 1)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+const ranked = (list: BoardRow[]) => list.map((r, i) => ({ ...r, rank: i + 1 }));
 
-function rewardView(p: ReferralPayout | undefined, qualified: boolean, amount: number, enabled: boolean): RewardView {
-  const hold = `once ${amount.toLocaleString("en-US")} ITDB is held for ${HOLD_DAYS} days`;
-  if (!qualified) return { amount, status: "waiting", note: `Tier 2, then paid ${hold}` };
+function legacyView(p: ReferralPayout | undefined, amount: number, enabled: boolean): RewardView {
   if (p?.status === "paid") return { amount: p.amount, status: "paid", txHash: p.txHash };
   if (p?.status === "pending") return { amount, status: "sending" };
-  if (p?.status === "failed" && !p.operator)
-    return { amount, status: "blocked", note: p.error ?? "Will be retried automatically" };
-  if (!p) return { amount, status: "waiting", note: `Paid ${hold}` };
+  if (p?.status === "failed" && !p.operator) return { amount, status: "blocked", note: p.error ?? "Will be retried automatically" };
   return { amount, status: "queued", note: enabled ? "Sending shortly" : "Sending starts soon" };
 }
 
-function summarise(req: Request, db: Awaited<ReturnType<typeof getDb>>, me: DbAccount, now = Date.now()): ReferralSummary {
-  const origin = new URL(req.url).origin;
+/** The old program's rewards for me — only referrals it qualified before it closed. */
+function legacyOf(db: DbShape, me: DbAccount): ReferralSummary["legacy"] {
   const cfg = payoutConfig();
-  const per = cfg?.perReferral ?? Number(process.env.ITDB_REWARDS_PER_REFERRAL ?? 10_000);
-  const enabled = cfg !== null;
+  const per = cfg?.perReferral ?? 10_000;
+  const rows: (RewardView & { who: string })[] = [];
+  for (const r of refereesOf(db, me))
+    if ((db.referralAwards[r.id] ?? []).some((a) => a.referrerId === me.id))
+      rows.push({ who: r.username, ...legacyView(db.referralPayouts[`${r.id}:referrer`], per, cfg !== null) });
+  if ((db.referralAwards[me.id] ?? []).length > 0)
+    rows.push({ who: "your welcome reward", ...legacyView(db.referralPayouts[`${me.id}:referee`], per, cfg !== null) });
+  if (rows.length === 0) return null;
+  const received = rows.filter((r) => r.status === "paid").reduce((t, r) => t + r.amount, 0);
+  const owed = rows.filter((r) => r.status !== "paid").reduce((t, r) => t + r.amount, 0);
+  return { received, owed, rows };
+}
 
-  let received = 0;
-  let owed = 0;
-  const rows: RefereeRow[] = refereesOf(db, me)
-    .map((r) => {
-      const awards = (db.referralAwards[r.id] ?? []).filter((a) => a.referrerId === me.id);
-      const q = awards.length > 0;
-      const reward = rewardView(db.referralPayouts[`${r.id}:referrer`], q, per, enabled);
-      if (reward.status === "paid") received += reward.amount;
-      else if (q) owed += reward.amount;
-      return {
-        username: r.username,
-        joinedAt: r.createdAt,
-        qualifiedAt: qualifiedAt(db, r.id),
-        tokens: awards.map((a) => a.token),
-        reward,
-      };
-    })
-    .sort((a, b) => b.joinedAt - a.joinedAt);
-
-  const iQualified = (db.referralAwards[me.id] ?? []).length > 0;
+function summarise(req: Request, db: DbShape, me: DbAccount, now = Date.now()): ReferralSummary {
+  const { credits, referees, qualified, step } = creditsOf(db, me);
+  const counted = new Set(countedReferees(db, me).map((r) => r.id));
+  const tokens: Record<string, number> = {};
+  let unpicked = 0;
+  for (const c of credits) {
+    if (!c.tokens) continue;
+    if (c.token) tokens[c.token] = (tokens[c.token] ?? 0) + c.tokens;
+    else unpicked += c.tokens;
+  }
 
   const d = new Date(now);
   const y = d.getUTCFullYear();
   const m = d.getUTCMonth();
-  const ranked = (list: LeaderRow[]) => list.map((r, i) => ({ ...r, rank: i + 1 }));
-  const thisMonth = ranked(leaderboard(db, y, m));
-  const prev = ranked(leaderboard(db, m === 0 ? y - 1 : y, m === 0 ? 11 : m - 1));
-
-  const canAdd = !me.referredBy && now - me.createdAt <= REFERRAL_WINDOW_MS;
+  const thisMonth = ranked(topReferrers(db, y, m));
+  const prev = ranked(topReferrers(db, m === 0 ? y - 1 : y, m === 0 ? 11 : m - 1));
+  const board = ranked(giveawayBoard(db));
+  const mine = board.find((r) => r.accountId === me.id);
 
   return {
     code: me.referralCode,
-    link: `${origin}/login?ref=${encodeURIComponent(me.referralCode)}`,
+    link: `${new URL(req.url).origin}/login?ref=${encodeURIComponent(me.referralCode)}`,
     referrer: referrerOf(db, me)?.username ?? (me.referredBy ? me.referredBy : null),
-    addCodeUntil: canAdd ? me.createdAt + REFERRAL_WINDOW_MS : null,
-    perReferral: per,
-    holdDays: HOLD_DAYS,
-    sending: enabled,
-    myReward: me.referredBy ? rewardView(db.referralPayouts[`${me.id}:referee`], iQualified, per, enabled) : null,
-    referees: rows,
-    received,
-    owed,
-    tiers: REFERRAL_TOKENS.map((t) => ({ token: t.token.code, tier2: t.tier2 })),
-    month: {
-      label: monthLabel(y, m),
-      rows: thisMonth.slice(0, 10),
-      myRank: thisMonth.find((r) => r.accountId === me.id)?.rank ?? null,
-    },
+    addCodeUntil: !me.referredBy && now - me.createdAt <= REFERRAL_WINDOW_MS ? me.createdAt + REFERRAL_WINDOW_MS : null,
+
+    credits,
+    totals: { usdc: credits.reduce((t, c) => t + c.usdc, 0), tokens, unpicked },
+
+    friends: refereesOf(db, me)
+      .map((r) => ({ username: r.username, joinedAt: r.createdAt, boughtAt: db.referralBuys[r.id]?.at ?? null, counted: counted.has(r.id) }))
+      .sort((a, b) => b.joinedAt - a.joinedAt),
+    brought: referees.length,
+    qualified,
+    step,
+    next: LADDER.find((s) => qualified < s.friends) ?? null,
+
+    month: { label: monthLabel(y, m), rows: thisMonth.slice(0, 10), myRank: thisMonth.find((r) => r.accountId === me.id)?.rank ?? null },
     lastMonth: { label: monthLabel(m === 0 ? y - 1 : y, m === 0 ? 11 : m - 1), winners: prev.slice(0, 3) },
     prizes: MONTHLY_PRIZES,
+
+    giveaway: { rows: board.slice(0, 10), mine: mine?.count ?? 0, myRank: mine?.rank ?? null },
+
+    legacy: legacyOf(db, me),
   };
 }
 
-/**
- * GET /api/referral — my code and link, my referrals, my match bonuses,
- * and this month's leaderboard.
- *
- * Reading this is also what awards matches, for me as a referee and for
- * each of my referrals — so a referral that reaches Tier 2 is credited the
- * next time either side opens the page, with nobody approving it.
- */
-export async function GET(req: Request) {
+async function load(req: Request) {
   const id = await sessionAccountId(req);
-  if (!id) return NextResponse.json({ error: "Sign in again." }, { status: 401 });
-  let db = await getDb();
-  const me = db.accounts.find((a) => a.id === id);
-  if (!me) return NextResponse.json({ error: "Account not found" }, { status: 404 });
-
-  // ponytail: one Horizon read per referral on every open; fine at this
-  // size, move to a periodic sweep if referral lists grow into the hundreds.
-  const pending = refereesOf(db, me).filter((r) => !qualifiedAt(db, r.id)).slice(0, 25);
-  await Promise.all([ensureReferralAwards(me), ...pending.map((r) => ensureReferralAwards(r))]);
-
-  // Real ITDB goes out after the response, so the page never waits on it.
-  after(() => settleReferralRewards().then(() => undefined, () => undefined));
-
-  db = await getDb();
-  return NextResponse.json(summarise(req, db, db.accounts.find((a) => a.id === id)!));
+  if (!id) return null;
+  const db = await getDb();
+  return db.accounts.find((a) => a.id === id) ?? null;
 }
 
-/** POST /api/referral — add a referral code, within 24 hours of joining. */
-export async function POST(req: Request) {
-  const id = await sessionAccountId(req);
-  if (!id) return NextResponse.json({ error: "Sign in again." }, { status: 401 });
+/**
+ * GET /api/referral — my code, my credits, my friends, the ladder and both
+ * boards. Opening it also checks the chain for friends (and me) who have
+ * crossed 100 XLM since joining, so credits appear with nobody approving them.
+ */
+export async function GET(req: Request) {
+  const me = await load(req);
+  if (!me) return NextResponse.json({ error: "Sign in again." }, { status: 401 });
 
-  let code = "";
+  // ponytail: one Horizon scan per unqualified friend per open; move to the
+  // cron sweep alone if referral lists grow into the hundreds.
+  const db = await getDb();
+  const pending = refereesOf(db, me).filter((r) => !db.referralBuys[r.id]).slice(0, 25);
+  if (me.referredBy && !db.referralBuys[me.id]) pending.push(me);
+  await Promise.all(pending.map(ensureBuy));
+
+  // What the earlier on-chain program still owes keeps going out.
+  after(() => settleReferralRewards().then(() => undefined, () => undefined));
+
+  const fresh = await getDb();
+  return NextResponse.json(summarise(req, fresh, fresh.accounts.find((a) => a.id === me.id)!));
+}
+
+/**
+ * POST /api/referral
+ *   { code }          add a referral code, within 24 hours of joining
+ *   { pick, token }   choose the ICO for one of my credits' tokens
+ */
+export async function POST(req: Request) {
+  const me = await load(req);
+  if (!me) return NextResponse.json({ error: "Sign in again." }, { status: 401 });
+
+  let body: { code?: unknown; pick?: unknown; token?: unknown } = {};
   try {
-    const body = (await req.json()) as { code?: unknown };
-    if (typeof body.code === "string") code = body.code;
+    body = await req.json();
   } catch {
     // handled below
   }
-  if (!code.trim()) return NextResponse.json({ error: "Enter a referral code." }, { status: 400 });
 
-  const result = await mutateDb((db) => {
-    const me = db.accounts.find((a) => a.id === id);
-    if (!me) return { error: "Account not found", status: 404 };
-    const problem = referralProblem(db, me, code);
-    if (problem) return { error: problem, status: 409 };
-    me.referredBy = code.trim().toUpperCase();
+  if (typeof body.pick === "string") {
+    const key = body.pick;
+    const token = body.token;
+    if (typeof token !== "string" || !(ICO_CODES as readonly string[]).includes(token))
+      return NextResponse.json({ error: "Choose one of the five ICOs." }, { status: 400 });
+    const error = await mutateDb((db) => {
+      const credit = creditsOf(db, db.accounts.find((a) => a.id === me.id)!).credits.find((c) => c.key === key);
+      if (!credit || credit.tokens === 0) return "That reward is not yours.";
+      if (credit.token) return "You already chose for that reward.";
+      (db.referralChoices[me.id] ??= {})[key] = token;
+      return null;
+    });
+    if (error) return NextResponse.json({ error }, { status: 409 });
+    const db = await getDb();
+    return NextResponse.json(summarise(req, db, db.accounts.find((a) => a.id === me.id)!));
+  }
+
+  const code = typeof body.code === "string" ? body.code : "";
+  if (!code.trim()) return NextResponse.json({ error: "Enter a referral code." }, { status: 400 });
+  const problem = await mutateDb((db) => {
+    const acct = db.accounts.find((a) => a.id === me.id);
+    if (!acct) return "Account not found";
+    const p = referralProblem(db, acct, code);
+    if (p) return p;
+    acct.referredBy = code.trim().toUpperCase();
     return null;
   });
-  if (result) return NextResponse.json({ error: result.error }, { status: result.status });
+  if (problem) return NextResponse.json({ error: problem }, { status: 409 });
 
   const db = await getDb();
-  const me = db.accounts.find((a) => a.id === id)!;
-  await ensureReferralAwards(me); // already at Tier 2? it qualifies now
-  after(() => settleReferralRewards().then(() => undefined, () => undefined));
-  return NextResponse.json(summarise(req, await getDb(), me));
+  const updated = db.accounts.find((a) => a.id === me.id)!;
+  await ensureBuy(updated); // already invested? it counts now
+  const fresh = await getDb();
+  return NextResponse.json(summarise(req, fresh, fresh.accounts.find((a) => a.id === me.id)!));
 }

@@ -43,6 +43,7 @@ import {
 } from "@/lib/itdb/vault-tiers";
 import { getDb, mutateDb, type DbAccount, type DbShape, type VaultClaimRecord } from "@/lib/server/db";
 import { memberHoldings, tokenBalance } from "@/lib/server/holdings";
+import { ladderBonus } from "@/lib/server/referral-program";
 import { sessionAccountId } from "@/lib/server/session";
 import { vaultTierBalance, vaultTierNeeded } from "@/lib/server/vault-perks";
 import { ITDBVAULT_TOKEN } from "@/lib/stellar/registry";
@@ -237,7 +238,8 @@ function summarise(db: DbShape, account: DbAccount, chain: ChainState, now = Dat
       : null,
     tiers: VAULT_TIERS.map(withRange),
 
-    allowed: e.allowed,
+    // Referral-ladder vaults come on top of the tier's.
+    allowed: e.allowed + ladderBonus(db, account.id).vaults,
     vaults,
     canChooseNumbers: e.eb !== null,
 
@@ -337,6 +339,7 @@ export async function POST(req: Request) {
   const e = entitlement(l.account, chain, now);
   const result = await mutateDb((db): Fail | { ok: true } => {
     const mine = (db.vaultClaims[l.account.id] ??= []);
+    e.allowed += ladderBonus(db, l.account.id).vaults;
     if (mine.length >= e.allowed)
       return fail(
         e.allowed === 0

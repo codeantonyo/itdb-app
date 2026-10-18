@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, Share2, Trophy, UserPlus } from "lucide-react";
+import { Check, Copy, Lock, Share2, Trophy, UserPlus } from "lucide-react";
 import type { ReferralSummary, RewardView } from "@/app/api/referral/route";
 import { AppBar } from "@/components/layout/app-bar";
 import { NetworkNotice } from "@/components/shared/network-notice";
@@ -9,10 +9,22 @@ import { SectionHeader } from "@/components/shared/section-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJson } from "@/lib/client/use-json";
 import { formatAmount } from "@/lib/format";
+import {
+  BUY_TOKENS,
+  BUY_USDC,
+  BUY_XLM,
+  GIVEAWAY,
+  ICO_CODES,
+  JOIN_TOKENS,
+  LADDER,
+  VERIFICATION_RULES,
+} from "@/lib/itdb/referral-program";
 import { cn } from "@/lib/utils";
 
+const fmt = (n: number) => formatAmount(n, 0);
 const until = (t: number) =>
   new Date(t).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const ICO_LIST = ICO_CODES.join(" · ");
 
 export default function ReferralPage() {
   const ref = useJson<ReferralSummary>("/api/referral", 30_000);
@@ -20,7 +32,9 @@ export default function ReferralPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <AppBar back title="Referrals" subtitle="ITDB for every referral who reaches Tier 2" />
+      <AppBar back title="Referrals" subtitle="Invite. Get paid." />
+
+      <Giveaway s={s} />
 
       {ref.error && !s && <NetworkNotice message={ref.error} onRetry={ref.refresh} />}
       {!s && !ref.error && <Skeleton className="h-[220px] rounded-[20px]" />}
@@ -29,17 +43,54 @@ export default function ReferralPage() {
         <>
           <ShareCard s={s} />
           {s.addCodeUntil !== null && <AddCode until={s.addCodeUntil} onDone={ref.refresh} />}
-          <MatchBonus s={s} />
-          <YourReferrals s={s} />
-          <Leaderboard s={s} />
-          <Rules s={s} />
         </>
       )}
+      <Rewards />
+      {s && <YourRewards s={s} onPicked={ref.refresh} />}
+      <Ladder s={s} />
+      {s && <YourReferrals s={s} />}
+      {s && <Leaderboard s={s} />}
+      <Rules />
+      {s?.legacy && <Earlier legacy={s.legacy} />}
     </div>
   );
 }
 
 /* ------------------------------------------------------------------ */
+
+function Giveaway({ s }: { s?: ReferralSummary | null }) {
+  const left = Math.max(GIVEAWAY.minimum - (s?.giveaway.mine ?? 0), 0);
+  return (
+    <section className="panel-navy engrave overflow-hidden p-5">
+      <p className="font-display text-[22px] font-semibold leading-tight text-gold">🔥 {GIVEAWAY.title}</p>
+      <div className="mt-3 grid grid-cols-1 gap-1.5">
+        {GIVEAWAY.prizes.map((p) => {
+          const row = s?.giveaway.rows.find((r) => r.rank === p.place);
+          return (
+            <div key={p.place} className="flex items-center gap-3 rounded-xl bg-elevated px-3 py-2">
+              <span className="text-[19px] leading-none">{p.medal}</span>
+              <span className="tnum font-display text-[17px] font-semibold text-primary">${p.usd.toLocaleString("en-US")}</span>
+              <span className="ml-auto truncate text-[12.5px] text-muted">
+                {row ? `${row.username} · ${row.count}${row.count < GIVEAWAY.minimum ? " (needs 10)" : ""}` : "Open"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <ul className="mt-4 flex flex-col gap-1 text-[13px] leading-relaxed text-primary">
+        {GIVEAWAY.rules.map((r) => (
+          <li key={r}>📌 {r}</li>
+        ))}
+      </ul>
+      {s && (
+        <p className="tnum mt-3 rounded-xl bg-gold-soft px-3.5 py-2.5 text-[13px] font-semibold text-gold">
+          You: {s.giveaway.mine} new member{s.giveaway.mine === 1 ? "" : "s"} this month
+          {left > 0 ? ` — ${left} more to enter` : s.giveaway.myRank ? ` — you are #${s.giveaway.myRank}` : ""}
+        </p>
+      )}
+    </section>
+  );
+}
 
 function ShareCard({ s }: { s: ReferralSummary }) {
   const [copied, setCopied] = useState<"link" | "code" | null>(null);
@@ -124,8 +175,7 @@ function AddCode({ until: ends, onDone }: { until: number; onDone: () => void })
       <SectionHeader title="Add a referral code" note={`until ${until(ends)}`} />
       <div className="surface p-5">
         <p className="text-[13.5px] leading-relaxed text-muted">
-          Joined through a friend? Enter their code in your first 24 hours and you both receive ITDB when you reach
-          Tier 2.
+          Joined through a friend? Enter their code in your first 24 hours and you both get {JOIN_TOKENS} tokens now.
         </p>
         <div className="mt-3 flex gap-2">
           <input
@@ -150,114 +200,222 @@ function AddCode({ until: ends, onDone }: { until: number; onDone: () => void })
   );
 }
 
-const TX = (hash: string) => `https://stellar.expert/explorer/public/tx/${hash}`;
-
-const STATUS_STYLE: Record<RewardView["status"], string> = {
-  paid: "bg-success-soft text-success",
-  sending: "bg-gold-soft text-gold",
-  queued: "bg-gold-soft text-gold",
-  blocked: "bg-danger-soft text-danger",
-  waiting: "bg-elevated text-muted-2",
-};
-const STATUS_LABEL: Record<RewardView["status"], string> = {
-  paid: "Sent",
-  sending: "Sending",
-  queued: "Queued",
-  blocked: "Action needed",
-  waiting: "Not yet",
-};
-
-function Status({ r }: { r: RewardView }) {
-  return (
-    <span className="flex shrink-0 flex-col items-end gap-0.5">
-      <span className={cn("rounded-md px-1.5 py-px text-[10.5px] font-bold uppercase tracking-wide", STATUS_STYLE[r.status])}>
-        {STATUS_LABEL[r.status]}
-      </span>
-      {r.txHash && (
-        <a href={TX(r.txHash)} target="_blank" rel="noopener noreferrer" className="text-[11.5px] font-semibold text-gold">
-          View transaction
-        </a>
-      )}
-    </span>
-  );
-}
-
-function MatchBonus({ s }: { s: ReferralSummary }) {
-  const per = formatAmount(s.perReferral, 0);
+function Rewards() {
   return (
     <section className="flex flex-col gap-3">
-      <SectionHeader title="Referral rewards" note={`${per} ITDB each`} />
+      <SectionHeader title="Your rewards" note="both of you" />
       <div className="surface p-5">
-        <p className="text-[13.5px] leading-relaxed text-muted">
-          Every referral who reaches Tier 2 and holds {per} ITDB for {s.holdDays} days earns{" "}
-          <span className="font-semibold text-primary">{per} ITDB for you</span> and{" "}
-          <span className="font-semibold text-primary">{per} ITDB for them</span>, sent straight to your wallets on the
-          Stellar network.
+        <p className="font-display text-[22px] font-semibold leading-tight text-primary">
+          💵 {fmt(BUY_USDC)} for you. 💵 {fmt(BUY_USDC)} for your friend.
         </p>
 
-        {(s.received > 0 || s.owed > 0) && (
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <div className="rounded-2xl bg-elevated px-3.5 py-3">
-              <p className="text-[12px] text-muted">Received</p>
-              <p className="tnum mt-0.5 text-[17px] font-semibold text-gold">{formatAmount(s.received, 0)} ITDB</p>
-            </div>
-            <div className="rounded-2xl bg-elevated px-3.5 py-3">
-              <p className="text-[12px] text-muted">On its way</p>
-              <p className="tnum mt-0.5 text-[17px] font-semibold text-primary">{formatAmount(s.owed, 0)} ITDB</p>
-            </div>
-          </div>
-        )}
+        <div className="mt-4 rounded-2xl bg-elevated p-4">
+          <p className="text-[12px] font-bold uppercase tracking-wide text-gold">1 · Join</p>
+          <p className="mt-1 text-[14px] leading-relaxed text-primary">
+            Your friend joins the channel and creates an account → you both get{" "}
+            <b>{fmt(JOIN_TOKENS)} tokens</b>, instantly.
+          </p>
+          <p className="mt-1 text-[12.5px] text-muted">Each of you chooses the ICO: {ICO_LIST}</p>
+        </div>
 
-        {s.myReward && (
-          <div className="mt-4 flex items-start justify-between gap-3 border-t border-hairline pt-4">
-            <div className="min-w-0">
-              <p className="text-[14.5px] font-semibold text-primary">Your welcome reward</p>
-              <p className="text-[12.5px] text-muted">
-                {s.myReward.status === "waiting"
-                  ? `${per} ITDB once you have held ${per} ITDB for ${s.holdDays} days`
-                  : s.myReward.note ?? `${per} ITDB for joining through ${s.referrer ?? "a referral"}`}
-              </p>
-            </div>
-            <Status r={s.myReward} />
-          </div>
-        )}
+        <div className="mt-2 rounded-2xl bg-elevated p-4">
+          <p className="text-[12px] font-bold uppercase tracking-wide text-gold">2 · Buy</p>
+          <p className="mt-1 text-[14px] leading-relaxed text-primary">
+            Your friend buys {BUY_XLM} XLM → you both get{" "}
+            <b>
+              {fmt(BUY_USDC)} USDC + {fmt(BUY_TOKENS)} tokens
+            </b>
+            .
+          </p>
+          <p className="mt-1 text-[12.5px] text-muted">Tokens from the same five ICOs, your choice.</p>
+        </div>
 
-        <p className="mt-4 text-[12.5px] leading-relaxed text-muted-2">
-          Nobody approves these by hand. Your wallet needs an ITDB trustline to receive them — the same one it needs to
-          hold ITDB at all.
+        <p className="mt-3 flex items-center gap-1.5 text-[13px] font-semibold text-gold">
+          <Lock className="size-3.5" />
+          Credited instantly. Unlocked at the flip.
         </p>
       </div>
     </section>
   );
 }
 
-function YourReferrals({ s }: { s: ReferralSummary }) {
+/** What I have been credited, with the ICO picker for any tokens not yet assigned. */
+function YourRewards({ s, onPicked }: { s: ReferralSummary; onPicked: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  if (s.credits.length === 0) return null;
+
+  const pick = async (key: string, token: string) => {
+    setBusy(key);
+    setError(null);
+    try {
+      const r = await fetch("/api/referral", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pick: key, token }),
+      });
+      const data = (await r.json()) as { error?: string };
+      if (r.ok) onPicked();
+      else setError(data.error ?? "That did not work.");
+    } catch {
+      setError("Network error — try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const tokens = Object.entries(s.totals.tokens);
   return (
     <section className="flex flex-col gap-3">
-      <SectionHeader
-        title="Your referrals"
-        note={s.referees.length ? `${s.referees.filter((r) => r.qualifiedAt).length} of ${s.referees.length} qualified` : undefined}
-      />
-      {s.referees.length === 0 ? (
-        <p className="surface p-5 text-[13.5px] text-muted">Nobody yet — share your link to start.</p>
-      ) : (
-        <div className="surface divide-y divide-hairline">
-          {s.referees.map((r) => (
-            <div key={r.username} className="flex items-center gap-3 px-4 py-3.5">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[15px] font-semibold text-primary">{r.username}</p>
-                <p className="text-[12.5px] text-muted">
-                  {r.qualifiedAt
-                    ? `Tier 2 in ${r.tokens.join(", ")} · ${r.reward.status === "waiting" ? r.reward.note : `${formatAmount(r.reward.amount, 0)} ITDB for you`}`
-                    : r.reward.note}
-                  {r.reward.status === "blocked" && r.reward.note && ` · ${r.reward.note}`}
-                </p>
-              </div>
-              <Status r={r.reward} />
+      <SectionHeader title="Credited to you" note="🔒 unlocked at the flip" />
+      <div className="surface p-5">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-2xl bg-elevated px-3.5 py-3">
+            <p className="text-[12px] text-muted">USDC</p>
+            <p className="tnum mt-0.5 text-[18px] font-semibold text-gold">{fmt(s.totals.usdc)}</p>
+          </div>
+          <div className="rounded-2xl bg-elevated px-3.5 py-3">
+            <p className="text-[12px] text-muted">Tokens</p>
+            <p className="tnum mt-0.5 text-[13.5px] font-semibold leading-snug text-primary">
+              {tokens.length ? tokens.map(([c, n]) => `${fmt(n)} ${c}`).join(" · ") : "—"}
+              {s.totals.unpicked > 0 && <span className="block text-gold">{fmt(s.totals.unpicked)} to choose</span>}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 divide-y divide-hairline border-t border-hairline">
+          {s.credits.map((c) => (
+            <div key={c.key} className="py-3">
+              <p className="flex items-baseline justify-between gap-3 text-[14px]">
+                <span className="font-semibold text-primary">
+                  {c.kind === "join" ? "Join" : c.kind === "buy" ? `Bought ${BUY_XLM} XLM` : "Ladder"}
+                  <span className="ml-1.5 font-normal text-muted">· {c.about}</span>
+                </span>
+                <span className="tnum shrink-0 text-[13px] text-primary">
+                  {[c.usdc ? `${fmt(c.usdc)} USDC` : "", c.tokens ? `${fmt(c.tokens)} ${c.token ?? "tokens"}` : ""]
+                    .filter(Boolean)
+                    .join(" + ")}
+                </span>
+              </p>
+              {c.tokens > 0 && !c.token && (
+                <div className="no-scrollbar mt-2 flex gap-1.5 overflow-x-auto">
+                  {ICO_CODES.map((code) => (
+                    <button
+                      key={code}
+                      disabled={busy !== null}
+                      onClick={() => pick(c.key, code)}
+                      className="tap shrink-0 rounded-full bg-gold-soft px-3 py-1.5 text-[12px] font-bold text-gold disabled:opacity-50"
+                    >
+                      {busy === c.key ? "…" : code}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
-      )}
+        {error && <p className="mt-2 text-[13px] text-danger">{error}</p>}
+      </div>
+    </section>
+  );
+}
+
+function Ladder({ s }: { s?: ReferralSummary | null }) {
+  const q = s?.qualified ?? 0;
+  return (
+    <section className="flex flex-col gap-3">
+      <SectionHeader title="And if you keep going" note={s?.next ? `${q}/${s.next.friends} friends` : s ? "top step" : undefined} />
+      <div className="surface divide-y divide-hairline">
+        {LADDER.map((step) => {
+          const done = q >= step.friends;
+          const pct = Math.min(q / step.friends, 1) * 100;
+          return (
+            <div key={step.friends} className="px-4 py-3.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <p className="text-[14.5px] font-semibold text-primary">👥 {step.friends} friends</p>
+                <p className={cn("tnum text-[12.5px] font-semibold", done ? "text-success" : "text-muted")}>
+                  {done ? "Reached ✓" : `${Math.min(q, step.friends)}/${step.friends} friends`}
+                </p>
+              </div>
+              <p className="mt-0.5 text-[13px] leading-relaxed text-muted">
+                {fmt(step.usdc)} USDC + {step.atms} ATM{step.atms > 1 ? "s" : ""} + {step.vaults} VAULT
+                {step.vaults > 1 ? "S" : ""}
+                {step.extras.map((x) => ` + ${x}`).join("")}
+              </p>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-elevated">
+                <div className="h-full rounded-full bg-gold" style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="px-1 text-[12.5px] text-muted-2">
+        A friend counts once they buy {BUY_XLM} XLM. Each step replaces the one before; the ATMs and vaults are added to
+        what you can place.
+      </p>
+    </section>
+  );
+}
+
+function YourReferrals({ s }: { s: ReferralSummary }) {
+  const toGiveaway = Math.max(GIVEAWAY.minimum - s.giveaway.mine, 0);
+  return (
+    <section className="flex flex-col gap-3">
+      <SectionHeader title="Your referrals" />
+      <div className="surface p-5">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-2xl bg-elevated px-3.5 py-3">
+            <p className="text-[12px] text-muted">Brought</p>
+            <p className="tnum mt-0.5 font-display text-[26px] font-semibold leading-none text-primary">{s.brought}</p>
+          </div>
+          <div className="rounded-2xl bg-elevated px-3.5 py-3">
+            <p className="text-[12px] text-muted">Bought {BUY_XLM} XLM</p>
+            <p className="tnum mt-0.5 font-display text-[26px] font-semibold leading-none text-gold">{s.qualified}</p>
+          </div>
+        </div>
+        <div className="tnum mt-3 flex gap-1.5 text-[12.5px]">
+          {LADDER.map((st) => (
+            <span
+              key={st.friends}
+              className={cn(
+                "flex-1 rounded-lg px-2 py-1.5 text-center font-semibold",
+                s.qualified >= st.friends ? "bg-success-soft text-success" : "bg-elevated text-muted",
+              )}
+            >
+              {Math.min(s.qualified, st.friends)}/{st.friends}
+            </span>
+          ))}
+        </div>
+        <p className="mt-3 text-[13px] text-primary">
+          {toGiveaway > 0
+            ? `${toGiveaway} more new member${toGiveaway === 1 ? "" : "s"} this month to enter the giveaway.`
+            : "You are in the giveaway — keep going for a higher place."}
+        </p>
+
+        {s.friends.length > 0 && (
+          <div className="mt-4 divide-y divide-hairline border-t border-hairline">
+            {s.friends.map((f) => (
+              <div key={`${f.username}-${f.joinedAt}`} className="flex items-center gap-3 py-2.5">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14.5px] font-semibold text-primary">{f.username}</span>
+                  <span className="block text-[12px] text-muted">
+                    Joined {new Date(f.joinedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    {!f.counted && " · over the daily limit, not counted"}
+                  </span>
+                </span>
+                <span
+                  className={cn(
+                    "shrink-0 rounded-md px-1.5 py-px text-[10.5px] font-bold uppercase tracking-wide",
+                    f.boughtAt ? "bg-success-soft text-success" : "bg-elevated text-muted-2",
+                  )}
+                >
+                  {f.boughtAt ? `${BUY_XLM} XLM ✓` : "Joined"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </section>
   );
 }
@@ -265,10 +423,7 @@ function YourReferrals({ s }: { s: ReferralSummary }) {
 function Leaderboard({ s }: { s: ReferralSummary }) {
   return (
     <section className="flex flex-col gap-3">
-      <SectionHeader
-        title="Top referrers"
-        note={s.month.myRank ? `you're #${s.month.myRank}` : s.month.label}
-      />
+      <SectionHeader title="Top referrers" note={s.month.myRank ? `you're #${s.month.myRank}` : s.month.label} />
       <div className="surface p-5">
         <div className="flex flex-col gap-2.5">
           {s.prizes.map((p) => {
@@ -279,14 +434,10 @@ function Leaderboard({ s }: { s: ReferralSummary }) {
                 <div className="min-w-0 flex-1">
                   <p className="text-[14.5px] font-semibold text-primary">
                     {row ? row.username : "Open"}
-                    {row && (
-                      <span className="ml-2 text-[12.5px] font-medium text-muted">
-                        {row.qualified} qualified
-                      </span>
-                    )}
+                    {row && <span className="ml-2 text-[12.5px] font-medium text-muted">{row.count} invested</span>}
                   </p>
                   <p className="tnum text-[12.5px] text-muted">
-                    {formatAmount(p.XDC, 0)} XDC · {formatAmount(p.XLM, 0)} XLM · {formatAmount(p.XRP, 0)} XRP
+                    {fmt(p.XDC)} XDC · {fmt(p.XLM)} XLM · {fmt(p.XRP)} XRP
                   </p>
                 </div>
               </div>
@@ -301,7 +452,7 @@ function Leaderboard({ s }: { s: ReferralSummary }) {
                 <span>
                   #{r.rank} {r.username}
                 </span>
-                <span>{r.qualified}</span>
+                <span>{r.count}</span>
               </p>
             ))}
           </div>
@@ -309,7 +460,7 @@ function Leaderboard({ s }: { s: ReferralSummary }) {
 
         <p className="mt-4 flex items-center gap-1.5 text-[12.5px] text-muted-2">
           <Trophy className="size-3.5" />
-          {s.month.label} — ranked by referrals who reached Tier 2 this month.
+          Ranked by new members who invested {BUY_XLM}+ XLM this month.
         </p>
         {s.lastMonth.winners.length > 0 && (
           <p className="mt-1 text-[12.5px] text-muted-2">
@@ -321,33 +472,53 @@ function Leaderboard({ s }: { s: ReferralSummary }) {
   );
 }
 
-function Rules({ s }: { s: ReferralSummary }) {
+function Rules() {
   return (
     <section className="flex flex-col gap-3">
-      <SectionHeader title="How it works" />
+      <SectionHeader title="The rules" note="we verify every one" />
       <div className="surface p-5">
-        <ol className="flex flex-col gap-2 text-[13.5px] leading-relaxed text-primary">
-          <li>1. Share your link or code.</li>
-          <li>2. Your friend joins and connects their wallet — or adds your code in their first 24 hours.</li>
-          <li>
-            3. When they reach Tier 2 in any ITDB token and have held {formatAmount(s.perReferral, 0)} ITDB for{" "}
-            {s.holdDays} days without a break, you both receive {formatAmount(s.perReferral, 0)} ITDB, sent to your
-            wallets automatically.
-          </li>
-        </ol>
-        <p className="label mt-4">Tier 2 starts at</p>
-        <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-          {s.tiers.map((t) => (
-            <span key={t.token} className="tnum rounded-md bg-elevated px-2.5 py-1.5 text-[12.5px] text-primary">
-              {formatAmount(t.tier2, 0)} {t.token}
-            </span>
+        <ul className="flex flex-col gap-1.5 text-[13.5px] leading-relaxed text-primary">
+          {VERIFICATION_RULES.map((r) => (
+            <li key={r}>🔥 {r}</li>
           ))}
-        </div>
-        <p className="mt-4 text-[12.5px] leading-relaxed text-muted-2">
-          Self-referrals, accounts sharing a wallet with their referrer, referral rings and wallets already counted for
-          someone else are disqualified automatically. The holding is checked on chain: ITDB moved out during the{" "}
-          {s.holdDays} days restarts the clock.
-        </p>
+          <li>🔥 Buys {BUY_XLM} XLM to unlock the big reward</li>
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+const STATUS_LABEL: Record<RewardView["status"], string> = {
+  paid: "Sent",
+  sending: "Sending",
+  queued: "Queued",
+  blocked: "Action needed",
+  waiting: "Not yet",
+};
+
+/** The earlier on-chain program, for those it has paid or still owes. */
+function Earlier({ legacy }: { legacy: NonNullable<ReferralSummary["legacy"]> }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <SectionHeader title="Earlier referral rewards" note="10,000 ITDB each" />
+      <div className="surface divide-y divide-hairline px-4">
+        {legacy.rows.map((r, i) => (
+          <div key={`${r.who}-${i}`} className="flex items-center gap-3 py-3">
+            <span className="min-w-0 flex-1 truncate text-[14px] text-primary">{r.who}</span>
+            {r.txHash ? (
+              <a
+                href={`https://stellar.expert/explorer/public/tx/${r.txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[12px] font-bold text-success"
+              >
+                Sent ✓
+              </a>
+            ) : (
+              <span className="text-[12px] font-semibold text-gold">{STATUS_LABEL[r.status]}</span>
+            )}
+          </div>
+        ))}
       </div>
     </section>
   );
