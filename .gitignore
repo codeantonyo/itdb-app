@@ -48,3 +48,4 @@ next-env.d.ts
 payouts.json
 qrs-bonus-paid.json
 atms-wave-paid.json
+itdb100-paid.json

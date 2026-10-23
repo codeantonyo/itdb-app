@@ -45,12 +45,19 @@ export const ITDBATMS_TOKEN: RegistryToken = {
   image: "/tokens/itdbatms.webp",
 };
 
+export const ITDB100_TOKEN: RegistryToken = {
+  code: "ITDB100",
+  issuer: "GC2SCEDYLDH6ZYNQOL7HBMFIH73U4RVYGXHC6P64YQ3BUHKXTTQQITDB",
+  expectedDomain: "itdb100.org",
+};
+
 export const TOKEN_REGISTRY: RegistryToken[] = [
   ITDB_TOKEN,
   ITDBONE_TOKEN,
   QRS_TOKEN,
   ITDBVAULT_TOKEN,
   ITDBATMS_TOKEN,
+  ITDB100_TOKEN,
 ];
 
 export const marketUrl = (t: { code: string; issuer: string }) =>

@@ -307,6 +307,8 @@ export interface DbShape {
   referralBuys: Record<string, { at: number; xlm: number }>;
   /** The ICO each member picked per referral credit: accountId → credit key → code */
   referralChoices: Record<string, Record<string, string>>;
+  /** ITDB 100: when each tier was first reached (The Ratchet), keyed by accountId */
+  itdb100: Record<string, { reached: Record<string, number> }>;
 }
 
 /** One milestone wave's in-app rewards, fixed when they were credited. */
@@ -370,6 +372,7 @@ const emptyDb = (): DbShape => ({
   atmWaves: {},
   referralBuys: {},
   referralChoices: {},
+  itdb100: {},
 });
 
 const obj = <T>(v: unknown, fallback: T): T =>
@@ -427,6 +430,7 @@ function normalizeDb(db: Partial<DbShape>): DbShape {
     atmWaves: obj(db.atmWaves, {}),
     referralBuys: obj(db.referralBuys, {}),
     referralChoices: obj(db.referralChoices, {}),
+    itdb100: obj(db.itdb100, {}),
   };
 }
 
@@ -615,6 +619,8 @@ function splitDb(db: DbShape): Map<string, string> {
     out.set(`refbuy:${id}`, JSON.stringify(b));
   for (const [id, c] of Object.entries(db.referralChoices))
     out.set(`refpick:${id}`, JSON.stringify(c));
+  for (const [id, r] of Object.entries(db.itdb100))
+    out.set(`i100:${id}`, JSON.stringify(r));
   return out;
 }
 
@@ -664,6 +670,8 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
       db.referralBuys[shard.slice(7)] = value as { at: number; xlm: number };
     else if (shard.startsWith("refpick:"))
       db.referralChoices[shard.slice(8)] = value as Record<string, string>;
+    else if (shard.startsWith("i100:"))
+      db.itdb100[shard.slice(5)] = value as { reached: Record<string, number> };
   }
   db.accounts.sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   return normalizeDb(db);
@@ -675,7 +683,7 @@ function assembleDb(shards: Map<string, ShardEntry>): DbShape {
  * deployment's shards survive a brief old/new instance overlap.
  */
 const OWNED_SHARD_RE =
-  /^(meta|otps|otpThrottle|loginThrottle|acquired)$|^(account|userstate|ledger|itdbone|qrs|airdrop|presale|qrsbonus|vault|refaward|refpay|mega|atm|atmwave|refbuy|refpick):/;
+  /^(meta|otps|otpThrottle|loginThrottle|acquired)$|^(account|userstate|ledger|itdbone|qrs|airdrop|presale|qrsbonus|vault|refaward|refpay|mega|atm|atmwave|refbuy|refpick|i100):/;
 
 function entryFromRow(row: {
   shard: string;
