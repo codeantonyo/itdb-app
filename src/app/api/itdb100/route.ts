@@ -10,6 +10,7 @@ import {
   gateTimes,
   i100TierFor,
   isEarly,
+  saleUnits,
   walletDue,
 } from "@/lib/itdb/itdb100";
 import { getDb, mutateDb } from "@/lib/server/db";
@@ -19,7 +20,7 @@ import { sessionAccountId } from "@/lib/server/session";
 import { ITDB100_TOKEN } from "@/lib/stellar/registry";
 
 export interface I100Summary {
-  /** Null when the sales could not be read */
+  /** Of the 100,000: XLM raised at the 1 XLM price. Null when the sales could not be read */
   sold: number | null;
   soldPct: number;
   gates: { pct: number; openedAt: number | null }[];
@@ -77,7 +78,7 @@ export async function GET(req: Request) {
   const bonuses = chain?.bonuses ?? [];
   const now = Date.now();
   const gates = gateTimes(sales);
-  const sold = sum(sales.map((s) => s.amount));
+  const sold = sum(sales.map(saleUnits));
   const wallets = new Set(me.wallets);
   const opening = sales[0]?.at ?? Infinity;
 

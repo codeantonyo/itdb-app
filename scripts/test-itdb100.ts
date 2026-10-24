@@ -13,7 +13,7 @@ const sales = [
   { wallet: "A", amount: 200, xlm: 100, at: OPEN }, // 100 XLM early
   { wallet: "B", amount: 12_000, xlm: 6_000, at: OPEN }, // 6,000 XLM early
   { wallet: "C", amount: 50, xlm: 50, at: OPEN }, // a 1 XLM order waiting at launch — still early
-  { wallet: "A", amount: 15_000, xlm: 15_000, at: OPEN + H }, // public, takes the total past 25%
+  { wallet: "A", amount: 20_000, xlm: 20_000, at: OPEN + H }, // public, takes the total past 25%
   { wallet: "D", amount: 1_000, xlm: 1_000, at: OPEN + 2 * H }, // public, after the 25% gate
 ];
 
@@ -33,7 +33,9 @@ assert.equal(walletDue("B", sales, gates).earlyBonus, 12_000 * 4, "5,000+ XLM: +
 assert.equal(walletDue("C", sales, gates).earlyBonus, 50, "under 100 XLM: no step, still doubled");
 
 // --- gates: % of what was bought by the moment the gate opened --------------
-assert.equal(a.gateBonus[25], 15_200, "A had 15,200 when 25% opened → +100%");
+assert.equal(a.gateBonus[25], 20_200, "A had 20,200 tokens when 25% opened → +100%");
+// Sold counts XLM raised at 1 XLM: B's 12,000 early tokens used 6,000 of the 100,000, not 12,000.
+assert.equal(gateTimes(sales.slice(0, 3))[25], null, "6,150 of 100,000 — no gate from early birds alone");
 assert.equal(walletDue("D", sales, gates).gateBonus[25], undefined, "bought after the gate: not that gate's bonus");
 
 // --- tiers and the dividend ---------------------------------------------------

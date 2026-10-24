@@ -116,9 +116,10 @@ const opening = sales[0].at;
 const isEarly = (s) => s.at <= opening || (s.amount > 0 && s.xlm / s.amount <= EARLY_PRICE + 1e-6);
 let gateAt = null;
 if (mode === "gate") {
+  // Sold = XLM raised at the 1 XLM price (early birds' 0.5 tokens count at half) — as in src/lib/itdb/itdb100.ts.
   let sold = 0;
   for (const s of sales) {
-    sold += s.amount;
+    sold += s.xlm > 0 ? s.xlm : s.amount;
     if (sold >= (SUPPLY * gate) / 100) {
       gateAt = s.at;
       break;

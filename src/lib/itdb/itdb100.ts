@@ -123,13 +123,21 @@ export interface I100Sale {
 export const isEarly = (s: I100Sale, opening: number) =>
   s.at <= opening || (s.amount > 0 && s.xlm / s.amount <= I100_EARLY_PRICE_XLM + 1e-6);
 
+/**
+ * How much of the 100,000 a sale used up: the XLM it raised at the 1 XLM
+ * launch price. Early birds paid 0.5, so their tokens count at half —
+ * 61,135 early-bird tokens for ~30,570 XLM leave ~69,430 of the sale.
+ * A payment with no XLM recorded counts token for token.
+ */
+export const saleUnits = (s: I100Sale) => (s.xlm > 0 ? s.xlm / I100_PRICE_XLM : s.amount);
+
 /** When each gate opened: the sale that took the total past its target. Sales oldest first. */
 export function gateTimes(sales: I100Sale[]): Record<number, number | null> {
   const out: Record<number, number | null> = {};
   let sold = 0;
   for (const g of I100_GATES) out[g.pct] = null;
   for (const s of sales) {
-    sold += s.amount;
+    sold += saleUnits(s);
     for (const g of I100_GATES) if (out[g.pct] === null && sold >= gateTarget(g)) out[g.pct] = s.at;
   }
   return out;

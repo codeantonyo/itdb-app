@@ -88,8 +88,8 @@ function Progress({ s }: { s?: I100Summary | null }) {
         })}
       </div>
       <p className="tnum mt-3 text-[13px] text-muted">
-        {s?.sold != null ? `${n0(s.sold)} of ${n0(I100_SUPPLY)} sold` : `${n0(I100_SUPPLY)} on sale`} · {I100_PRICE_XLM} XLM per
-        token
+        {s?.sold != null ? `${n0(Math.max(I100_SUPPLY - s.sold, 0))} of ${n0(I100_SUPPLY)} left` : `${n0(I100_SUPPLY)} on sale`} ·{" "}
+        {I100_PRICE_XLM} XLM per token
       </p>
     </section>
   );
